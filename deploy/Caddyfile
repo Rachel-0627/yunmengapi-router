@@ -1,0 +1,73 @@
+# 三个子域名,各管各的。Caddy 自动申请并续期 Let's Encrypt 证书。
+
+{
+	email {$ACME_EMAIL}
+}
+
+# 通用安全响应头
+(secure) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# 营销站
+yunmengapi.com, www.yunmengapi.com {
+	import secure
+	reverse_proxy web:3001
+	encode gzip zstd
+}
+
+# 控制台:注册 / 登录 / 令牌 / 充值 / 后台
+console.yunmengapi.com {
+	import secure
+
+	# 让控制台的配色跟营销站一致。
+	# new-api 的主题预设存在浏览器 Cookie 里(每人一份偏好),
+	# 服务端没有"全站默认"的配置项。这里给【还没有偏好的新访客】
+	# 预置一次,用户之后自己在调色板里改会覆盖掉,不会被反复重置。
+	#   anthropic = 暖白底 + 橙色主色,最接近营销站的纸墨风
+	#   font=sans 是必须的 —— anthropic 预设默认解析成衬线字体
+	@noThemePref not header Cookie *theme_preset=*
+	header @noThemePref +Set-Cookie "theme_preset=anthropic; Path=/; Max-Age=31536000; SameSite=Lax"
+	header @noThemePref +Set-Cookie "theme_font=sans; Path=/; Max-Age=31536000; SameSite=Lax"
+
+	# new-api 的图标是镜像内的静态文件,改不了配置。
+	# 这里把这两个路径截给营销站,换成我们自己的品牌图标。
+	handle /favicon.ico {
+		reverse_proxy web:3001
+	}
+	handle /logo.png {
+		reverse_proxy web:3001
+	}
+
+	handle {
+		reverse_proxy new-api:3000
+	}
+}
+
+# API 端点。流式响应必须关闭缓冲,否则 SSE 会卡住
+api.yunmengapi.com {
+	import secure
+
+	handle /favicon.ico {
+		reverse_proxy web:3001
+	}
+	handle /logo.png {
+		reverse_proxy web:3001
+	}
+
+	handle {
+	reverse_proxy new-api:3000 {
+		flush_interval -1
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+	}
+}

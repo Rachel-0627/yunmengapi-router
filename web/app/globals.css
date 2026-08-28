@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+/* ============================================
+   设计令牌 · 纸墨风(对齐 apimart)
+   暖灰中性色 + 烧橙强调色,浅色为主
+   改配色只改这里,全站跟着变
+   ============================================ */
+:root {
+  /* 底色:暖白,不是纯白 —— 像纸 */
+  --bg: #f7f5f4;
+  --bg-soft: #f2f0f0;
+  /* 卡片 */
+  --surface: #fafafa;
+  --surface-hi: #f2f0f0;
+  --border: #e2dedb;
+  --border-hi: #d8d4d2;
+  /* 文字 */
+  --fg: #020202;
+  --muted: #65615e;
+  --dim: #8f8b88;
+  /* 强调色:烧橙 */
+  --c1: #d9551a;
+  --c2: #e08a4f;
+  --c3: #b8b3af;
+  --ok: #2f7d5b;
+  --warn: #a8620d;
+  /* 阴影 */
+  --nav-bg: rgba(247, 245, 244, .80);
+  --shadow-sm: 0 1px 2px rgba(20, 19, 18, .06);
+  --shadow-md: 0 4px 16px -4px rgba(20, 19, 18, .10);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #080808;
+    --bg-soft: #0e0d0d;
+    --surface: #141312;
+    --surface-hi: #1c1a19;
+    --border: #2b2927;
+    --border-hi: #3a3634;
+    --fg: #fafafa;
+    --muted: #9b9895;
+    --dim: #807d7a;
+    --c1: #ef6d33;
+    --c2: #e08a4f;
+    --c3: #55504d;
+    --ok: #4ba97e;
+    --warn: #d08a2c;
+    --nav-bg: rgba(8, 8, 8, .78);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, .5);
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-soft: var(--bg-soft);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-dim: var(--dim);
+  --color-c1: var(--c1);
+  --color-c2: var(--c2);
+  --color-c3: var(--c3);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+    "Noto Sans CJK SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* 中文正文行距要大一点才透气 */
+  line-height: 1.75;
+  overflow-x: hidden;
+}
+
+::selection { background: rgba(217, 85, 26, .16); }
+
+/* 焦点框:用品牌色,不用浏览器默认的蓝色 */
+:focus-visible {
+  outline: 2px solid var(--c1);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+/* 鼠标点击不显示焦点框,只有键盘 Tab 才显示 */
+:focus:not(:focus-visible) { outline: none; }
+
+/* 工具类拆到独立文件,见 ui.css */
+@import "./ui.css";

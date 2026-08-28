@@ -1,0 +1,114 @@
+/* 工具类:卡片、背景、按钮、徽章、动画。设计令牌见 globals.css */
+
+/* 强调文字:纸墨风只用单色,不做霓虹渐变 */
+.grad-text { color: var(--c1); }
+
+/* 卡片:实底 + 细描边,悬停只加阴影,不发光 */
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+.glass-hover:hover {
+  border-color: var(--border-hi);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* 网格背景:极淡,只在首屏做一点纹理 */
+.grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: .5;
+  mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 20%, transparent 72%);
+  pointer-events: none;
+}
+
+/* 首屏暖色晕染,非常克制 */
+.glow-top {
+  position: absolute;
+  left: 50%;
+  top: -200px;
+  width: 760px;
+  height: 420px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(217, 85, 26, .07) 0%,
+    rgba(217, 85, 26, .03) 42%,
+    transparent 70%
+  );
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+/* 分隔线 */
+.hairline {
+  height: 1px;
+  background: var(--border);
+}
+
+/* 主按钮:实底墨色,apimart 就是这个做法 */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 9px;
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--bg);
+  background: var(--fg);
+  box-shadow: var(--shadow-sm);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.btn-primary:hover { opacity: .86; transform: translateY(-1px); }
+
+/* 次按钮 */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 9px;
+  font-weight: 500;
+  font-size: 15px;
+  color: var(--fg);
+  border: 1px solid var(--border-hi);
+  background: var(--surface);
+  transition: background .18s ease, border-color .18s ease;
+}
+.btn-ghost:hover { background: var(--surface-hi); border-color: var(--dim); }
+
+/* 徽章 */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+/* 入场渐显 */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+.rise { animation: rise .55s cubic-bezier(.22,.8,.3,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rise { animation: none; }
+  .glass-hover:hover { transform: none; }
+}

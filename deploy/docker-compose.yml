@@ -1,0 +1,142 @@
+# 云梦API 生产部署
+#
+# 加固要点(与官方示例的区别):
+#   1. new-api 使用官方 CI 构建 + cosign 签名的镜像,并按 sha256 摘要锁定
+#      (不用 :latest —— 那个标签会被自动覆盖)
+#   2. 所有密码从 .env 读取,仓库里没有任何明文密码
+#   3. postgres / redis 【不暴露任何端口】,只在内网互通
+#   4. new-api 和 web 只监听 127.0.0.1,外部只能经 Caddy 访问
+#   5. Caddy 独占 80/443,自动申请并续期 HTTPS 证书
+#
+# 启动前必须先执行:
+#   cp .env.example .env && bash gen-secrets.sh   # 生成随机密码
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Caddyfile 里的 {$ACME_EMAIL} 由这里注入,缺了会拿不到证书到期通知
+      - ACME_EMAIL=${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [new-api, web]
+    networks: [edge]
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # 营销站(本仓库的 Next.js)
+  web:
+    build:
+      context: ../web
+      dockerfile: ../deploy/Dockerfile.web
+    container_name: web
+    restart: always
+    expose: ["3001"]          # 只在内网暴露,主机端口不开
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      # 必须显式指定。Next.js standalone 的 server.js 读 HOSTNAME 决定监听地址,
+      # 而 Docker 默认把 HOSTNAME 设成容器 ID,导致只绑在容器自身主机名上,
+      # 反向代理连不进来。
+      - HOSTNAME=0.0.0.0
+    networks: [edge]
+    logging: *logging
+
+  # 网关:使用官方 CI 构建的镜像,并用 digest 钉死
+  #
+  # 为什么不自行构建:
+  #   本机 2 核 1.6G,编译 12 万行 Go 会把机器压死(实测 25 分钟 SSH 失联)。
+  # 为什么用官方镜像是安全的:
+  #   该镜像由 GitHub Actions 在打 tag 时从公开源码自动构建,并且
+  #     · cosign keyless 签名(Sigstore,可验证构建来源就是该仓库的工作流)
+  #     · SLSA provenance(provenance: mode=max)
+  #     · 附带 SBOM 物料清单
+  #   配合下面的 @sha256 摘要锁定,内容被替换会直接拉取失败。
+  #   验证方法见 docs/部署指南.md 的「校验镜像签名」。
+  new-api:
+    image: calciumion/new-api:v1.0.0-rc.25@sha256:54a0b10924aa75fa5b5947208b820ced66b6ef4b445b35f122b31d80676aba2b
+    container_name: new-api
+    restart: always
+    command: --log-dir /app/logs
+    expose: ["3000"]          # 只在内网暴露
+    volumes:
+      - ./data:/data
+      - ./logs:/app/logs
+    environment:
+      - SQL_DSN=postgresql://${PG_USER}:${PG_PASSWORD}@postgres:5432/${PG_DB}
+      - REDIS_CONN_STRING=redis://:${REDIS_PASSWORD}@redis:6379
+      - SESSION_SECRET=${SESSION_SECRET}
+      - CRYPTO_SECRET=${CRYPTO_SECRET}
+      # 会话 Cookie 安全:全站 HTTPS,必须开。
+      # 注意:SESSION_COOKIE_SECURE=true 时【必须】同时给 SESSION_COOKIE_TRUSTED_URL,
+      #      且每个 URL 必须以 https:// 开头,否则 new-api 启动直接报错。
+      - SESSION_COOKIE_SECURE=true
+      - SESSION_COOKIE_TRUSTED_URL=https://console.yunmengapi.com,https://api.yunmengapi.com
+      # 只信任 Docker 内网来的代理头(Caddy 在 172.19.0.0/16)。
+      # 不设的话 new-api 会宽松地信任全部 RFC1918 地址。
+      - TRUSTED_PROXIES=172.16.0.0/12
+      - TZ=Asia/Shanghai
+      - ERROR_LOG_ENABLED=true
+      - BATCH_UPDATE_ENABLED=true
+      - NODE_NAME=yunmeng-hk-1
+      - STREAMING_TIMEOUT=300
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    networks: [edge, backend]
+    logging: *logging
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: always
+    # 注意:此处【没有 ports】—— 数据库绝不对公网开放
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+      TZ: Asia/Shanghai
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER} -d ${PG_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    # 同样【没有 ports】
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [backend]
+    logging: *logging
+
+networks:
+  edge:      # 对外服务层
+  backend:   # 数据层,不与 caddy 相通
+    internal: true
+
+volumes:
+  pg_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

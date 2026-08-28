@@ -1,0 +1,34 @@
+# 依赖
+node_modules/
+# 构建产物
+.next/
+out/
+dist/
+# 环境变量(绝不入库)
+.env
+.env.*
+!.env.example
+# new-api 上游源码:仅本地参考,不随本仓库分发
+vendor/
+# 系统
+.DS_Store
+*.log
+# AI 助手配置
+CLAUDE.md
+AGENTS.md
+
+# 商业机密:进货价与毛利率,不入库
+docs/定价成本.md
+
+# 部署产生的运行时数据,不入库
+# 服务器上 clone 的 new-api 源码
+deploy/new-api/
+deploy/data/
+deploy/logs/
+deploy/backups/
+
+# 本地构建的营销站成品包(部署用,不入库)
+web/.deploy-bundle/
+
+# TS 增量构建缓存
+*.tsbuildinfo

@@ -1,0 +1,21 @@
+# 营销站镜像 —— 纯拷贝,不在服务器上编译
+#
+# 为什么不在服务器构建:
+#   目标机 2 核 1.6G,npm ci + next build 会把机器压到 SSH 失联。
+#   改为在开发机上 `npm run build`,把 .next/standalone 成品打包上传,
+#   服务器只负责运行。构建耗时从十几分钟降到几秒。
+#
+# 成品包由 deploy/build-web.sh 生成(web/.deploy-bundle)。
+
+FROM node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3001
+
+# 不用 root 跑
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+
+COPY --chown=nextjs:nodejs .deploy-bundle/ ./
+
+USER nextjs
+EXPOSE 3001
+CMD ["node", "server.js"]
