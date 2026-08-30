@@ -94,6 +94,27 @@ services:
     networks: [edge, backend]
     logging: *logging
 
+  # 生图翻译层:上游生图只有异步接口,new-api 只支持同步,这层负责把两边接上。
+  # 详见 deploy/image-shim/server.js。不对外暴露,只供 new-api 内网调用。
+  image-shim:
+    build: ./image-shim
+    container_name: image-shim
+    restart: always
+    expose: ["8080"]
+    environment:
+      - UPSTREAM_BASE=https://zexitongxue.com
+      - PORT=8080
+      - POLL_INTERVAL_MS=3000
+      - MAX_WAIT_MS=240000        # 实测出图约 40 秒,留足余量
+      - MAX_CONCURRENCY=5         # 每个请求占用数十秒,必须限流
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [edge]              # 需要访问外网上游,不能放 internal 的 backend
+    logging: *logging
+
   postgres:
     image: postgres:15-alpine
     container_name: postgres

@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import { pricedTextModels, imageModels } from '@/lib/models'
+import { videoModels } from '@/lib/video'
 import { site } from '@/lib/site'
 import { ModelCatalog } from '@/components/model-catalog'
 import { catalog } from '@/lib/catalog'
 
 export const metadata: Metadata = {
   title: '价格',
-  description: '按量计费,充多少用多少。文本按 token,生图按张。无月费,无最低消费。',
+  description: '按量计费,充多少用多少。文本按 token,生图按张,视频按秒。无月费,无最低消费。',
 }
 
 export default function Page() {
@@ -71,7 +72,7 @@ export default function Page() {
         {/* 生图模型 */}
         <h2 className="mt-14 text-[20px] font-semibold">生图模型</h2>
         <p className="mt-2 text-[13.5px] text-[var(--dim)]">
-          按张计费,生成失败不扣费
+          按张计费,生成失败不扣费。1K 与 4K 是两个独立模型名,按下方 id 调用
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           {imageModels.map((m) => (
@@ -105,6 +106,53 @@ export default function Page() {
           ))}
         </div>
 
+        {/* 视频模型 */}
+        <h2 className="mt-14 text-[20px] font-semibold">视频模型</h2>
+        <p className="mt-2 text-[13.5px] text-[var(--dim)]">
+          按秒计费,总价 = 每秒单价 × 生成时长。时长由请求参数 duration 指定
+        </p>
+        <div className="mt-5 overflow-x-auto">
+          <table className="w-full min-w-[620px] text-[14px]">
+            <thead>
+              <tr className="border-b border-[var(--border)] text-left text-[12.5px] text-[var(--dim)]">
+                <th className="py-3 pr-4 font-medium">模型</th>
+                <th className="py-3 pr-4 font-medium">分辨率</th>
+                <th className="py-3 pr-4 font-medium">可选时长</th>
+                <th className="py-3 pr-4 text-right font-medium">单价</th>
+                <th className="py-3 text-right font-medium">5 秒约</th>
+              </tr>
+            </thead>
+            <tbody>
+              {videoModels.map((m) => (
+                <tr key={m.id} className="border-b border-[var(--border)]">
+                  <td className="py-4 pr-4">
+                    <div className="font-medium">{m.name}</div>
+                    <div className="mt-0.5 font-mono text-[11.5px] text-[var(--dim)]">
+                      {m.id}
+                    </div>
+                    <div className="mt-1 text-[12.5px] text-[var(--muted)]">{m.blurb}</div>
+                  </td>
+                  <td className="py-4 pr-4 whitespace-nowrap font-mono text-[13px]">
+                    {m.resolution}
+                  </td>
+                  <td className="py-4 pr-4 whitespace-nowrap font-mono text-[13px] text-[var(--dim)]">
+                    {m.minSeconds}–{m.maxSeconds} 秒
+                  </td>
+                  <td className="py-4 pr-4 text-right whitespace-nowrap font-mono font-semibold">
+                    ¥{m.pricePerSecond}
+                    <span className="ml-0.5 text-[11.5px] font-normal text-[var(--dim)]">
+                      /秒
+                    </span>
+                  </td>
+                  <td className="py-4 text-right whitespace-nowrap font-mono text-[13px] text-[var(--dim)]">
+                    ¥{(m.pricePerSecond * 5).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
         {/* 全量模型目录 */}
         <h2 className="mt-16 text-[20px] font-semibold">全部模型</h2>
         <p className="mt-2 text-[13.5px] text-[var(--dim)]">
@@ -123,6 +171,7 @@ export default function Page() {
             { t: '实时扣费', d: '每次请求结束立即结算,控制台能看到每一条调用的明细和花费。' },
             { t: '额度不过期', d: '充值的额度长期有效,不设过期时间,也不会因为长期不用而清零。' },
             { t: '生图失败不扣费', d: '内容审核拒绝、上游超时导致的失败,不扣额度。' },
+            { t: '视频按秒结算', d: '总价 = 每秒单价 × 实际生成时长。请求时用 duration 指定秒数,不填默认 4 秒。' },
             { t: '支付宝 / 微信充值', d: '充值实时到账,无需信用卡,无需绑定境外支付方式。' },
           ].map((x) => (
             <div key={x.t} className="glass p-5">

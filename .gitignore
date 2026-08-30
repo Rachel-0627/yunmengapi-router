@@ -20,6 +20,9 @@ AGENTS.md
 # 商业机密:进货价与毛利率,不入库
 docs/定价成本.md
 
+# 交接文档:含真实上游密钥,绝不入库
+docs/交接说明.md
+
 # 部署产生的运行时数据,不入库
 # 服务器上 clone 的 new-api 源码
 deploy/new-api/

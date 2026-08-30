@@ -103,18 +103,25 @@ export type ImageModel = {
   featured?: boolean
 }
 
+// 注意:1K 与 4K 是【两个独立的模型名】,不是同一模型的参数档位。
+// 客户必须按 id 调用,传 size 参数不会改变计费档位。
 export const imageModels: ImageModel[] = [
   {
-    id: 'gpt-image-2',
-    name: 'GPT Image 2',
+    id: 'gpt-image2-1k',
+    name: 'GPT Image 2 · 1K',
     vendor: 'OpenAI',
     blurb: '文生图与图生图,指令遵循准确,适合海报、配图、电商图',
-    tiers: [
-      { label: '1K', price: 0.05, note: '1024px,日常出图' },
-      { label: '4K', price: 0.145, note: '高分辨率,可直接印刷' },
-    ],
+    tiers: [{ label: '1024px', price: 0.05, note: '日常出图' }],
     tags: ['文生图', '图生图'],
     featured: true,
+  },
+  {
+    id: 'gpt-image2-4k',
+    name: 'GPT Image 2 · 4K',
+    vendor: 'OpenAI',
+    blurb: '同一模型的高分辨率档,细节更足,可直接用于印刷',
+    tiers: [{ label: '4K', price: 0.145, note: '高分辨率' }],
+    tags: ['文生图', '高清'],
   },
 ]
 

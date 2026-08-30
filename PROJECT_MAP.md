@@ -42,7 +42,8 @@
 | `web/lib/site.ts` | 55 | **品牌单一来源**:站名、域名、控制台路径、客服邮箱、合规披露文案。另定义文本加价系数 `MARKUP`(未被组件引用,不进前端包) |
 | `web/lib/catalog.ts` | 118 | **全量模型目录**:72 个付费模型,元组格式压缩存储。售价 = 进货价 × 2.5。**已剔除全部免费模型** |
 | `web/lib/snippets.ts` | 133 | **共享代码示例**:对话 / 三协议 / 生图。首页和文档页共用,不重复写 |
-| `web/lib/models.ts` | 124 | 文本模型 + 生图模型清单。**只放最终售价和官方公开价,绝不放进货成本**(会被打包进浏览器) |
+| `web/lib/models.ts` | 131 | 文本模型 + 生图模型清单(生图为 `gpt-image2-1k`/`-4k` 两个独立模型名)。**只放最终售价和官方公开价,绝不放进货成本**(会被打包进浏览器) |
+| `web/lib/video.ts` | 111 | **视频模型清单与售价**。按【秒】计费,总价 = 每秒单价 × 时长。与 models.ts 拆开是因为计费维度不同 |
 
 ### 样式
 | 文件 | 行数 | 职责 |
@@ -109,7 +110,9 @@
 
 | 文件 | 职责 |
 |---|---|
-| `deploy/docker-compose.yml` | 五个容器:caddy / web / new-api / postgres / redis。**已加固** |
+| `deploy/docker-compose.yml` | 六个容器:caddy / web / new-api / image-shim / postgres / redis。**已加固** |
+| `deploy/image-shim/server.js` | **生图翻译层**(165 行,零依赖 Node)。上游生图仅有异步接口、new-api 仅支持同步,本服务对 new-api 装成同步接口,内部跑「提交 → 轮询 → 拿图」。**不改 new-api 源码** |
+| `deploy/image-shim/Dockerfile` | 翻译层镜像,`node:22-alpine`,非 root 运行 |
 | `deploy/Caddyfile` | 三个子域名的反向代理 + 自动 HTTPS + 安全响应头 |
 | `deploy/Dockerfile.web` | 营销站镜像,多阶段构建,非 root 运行 |
 | `deploy/.env.example` | 环境变量模板(真实 `.env` 已 gitignore) |
