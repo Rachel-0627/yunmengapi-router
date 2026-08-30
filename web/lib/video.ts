@@ -24,6 +24,8 @@ export type VideoModel = {
   minSeconds: number
   maxSeconds: number
   blurb: string
+  /** 需要提醒客户的限制或默认行为,会在定价页显著标出 */
+  note?: string
   tags: string[]
   featured?: boolean
 }
@@ -71,7 +73,8 @@ export const videoModels: VideoModel[] = [
     pricePerSecond: 1.9,
     minSeconds: 4,
     maxSeconds: 15,
-    blurb: '720p 标准版,出片稳定',
+    blurb: '720p 标准版,支持最多 9 张参考图',
+    note: '建议 10 秒以内,15 秒长任务可能超时',
     tags: ['文生视频'],
   },
   {
@@ -83,6 +86,7 @@ export const videoModels: VideoModel[] = [
     minSeconds: 4,
     maxSeconds: 30,
     blurb: '最新一代,支持多图/视频/音频参考,时长可到 30 秒',
+    note: '默认生成声音,传 generate_audio=false 可出静音视频',
     tags: ['文生视频', '图生视频', '旗舰'],
     featured: true,
   },
