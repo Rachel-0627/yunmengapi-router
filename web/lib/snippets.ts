@@ -96,7 +96,7 @@ export const protocolSnippets: Snippet[] = [
   },
 ]
 
-/** 生图 */
+/** 生图:1K 与 4K 是两个独立模型名,计费按模型名结算,不看 size */
 export const imageSnippets: Snippet[] = [
   {
     label: 'cURL',
@@ -105,29 +105,80 @@ export const imageSnippets: Snippet[] = [
   -H "Authorization: Bearer $API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-image-2",
+    "model": "gpt-image2-1k",
     "prompt": "一只在雪地里打滚的柴犬,电影感光线",
     "size": "1024x1024",
     "n": 1
-  }'`,
+  }'
+
+# 4K 换成 "model": "gpt-image2-4k" 并传 "size": "3840x2160"`,
   },
   {
     label: 'Python',
     lang: 'python',
     code: `from openai import OpenAI
 
-client = OpenAI(
-    api_key="你的 API Key",
-    base_url="${BASE}/v1",
-)
+client = OpenAI(api_key="你的 API Key", base_url="${BASE}/v1")
 
-# size 决定计费档位:1024x1024 走 1K 价,更高走 4K 价
 resp = client.images.generate(
-    model="gpt-image-2",
+    model="gpt-image2-1k",     # 4K 用 gpt-image2-4k
     prompt="一只在雪地里打滚的柴犬,电影感光线",
-    size="1024x1024",
+    size="1024x1024",          # 4K 用 3840x2160
     n=1,
 )
 print(resp.data[0].url)`,
+  },
+]
+
+/** 视频:异步三步 —— 提交、轮询、下载 */
+export const videoSnippets: Snippet[] = [
+  {
+    label: 'cURL',
+    lang: 'bash',
+    code: `# ① 提交任务
+curl ${BASE}/v1/videos \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "seedance-2.0-720p",
+    "prompt": "一只橘猫在草地上慢慢走过,阳光,电影感",
+    "duration": 5,
+    "aspect_ratio": "16:9"
+  }'
+# → {"task_id": "task_xxx", "status": "queued", "seconds": "5"}
+
+# ② 轮询,直到 status 变成 completed
+curl ${BASE}/v1/videos/task_xxx \\
+  -H "Authorization: Bearer $API_KEY"
+# → {"status": "completed", "progress": 100, "url": "https://..."}
+
+# ③ 下载上一步返回的 url(无需鉴权)`,
+  },
+  {
+    label: 'Python',
+    lang: 'python',
+    code: `import time, requests
+
+BASE, KEY = "${BASE}", "你的 API Key"
+H = {"Authorization": f"Bearer {KEY}"}
+
+# ① 提交
+task = requests.post(f"{BASE}/v1/videos", headers=H, json={
+    "model": "seedance-2.0-720p",
+    "prompt": "一只橘猫在草地上慢慢走过,阳光,电影感",
+    "duration": 5,            # 4-15 秒;seedance2.5 支持到 30 秒
+    "aspect_ratio": "16:9",
+}).json()
+
+# ② 轮询(整段约 1-3 分钟)
+while True:
+    r = requests.get(f"{BASE}/v1/videos/{task['task_id']}", headers=H).json()
+    if r["status"] in ("completed", "failed"):
+        break
+    time.sleep(5)
+
+# ③ 下载
+if r["status"] == "completed":
+    open("out.mp4", "wb").write(requests.get(r["url"]).content)`,
   },
 ]

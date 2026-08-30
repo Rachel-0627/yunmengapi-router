@@ -76,7 +76,7 @@ export default function Page() {
         </p>
         <p className="mt-3 rounded-lg border border-[var(--warn)]/30 bg-[var(--warn)]/5 p-3.5 text-[13px] leading-relaxed text-[var(--muted)]">
           <span className="font-semibold text-[var(--fg)]">调用 4K 时请务必传 <code className="font-mono">size=&quot;3840x2160&quot;</code>。</span>
-          {' '}计费按模型名结算,不看 size 参数——用 4K 模型却传 1024×1024,仍按 4K 单价扣费。
+          {' '}计费按模型名结算,不看 size 参数——用 4K 模型却传 1024×1024,仍按 4K 单价扣费。Nano Banana Pro 需传 quality=&quot;4K&quot; 才出高分辨率。
           反之 1K 模型不支持 4K 尺寸,传了会被直接拒绝(不扣费)。
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">

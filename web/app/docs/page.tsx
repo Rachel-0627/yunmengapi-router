@@ -1,28 +1,13 @@
 import type { Metadata } from 'next'
 import { site } from '@/lib/site'
 import { CodeTabs } from '@/components/code-tabs'
-import { chatSnippets, protocolSnippets, imageSnippets } from '@/lib/snippets'
+import { chatSnippets, protocolSnippets, imageSnippets, videoSnippets } from '@/lib/snippets'
+import { clients, vendors, errors } from '@/lib/docs-data'
 
 export const metadata: Metadata = {
   title: '接入文档',
-  description: '五分钟接入。完全兼容 OpenAI SDK,已有项目只需替换 base_url。',
+  description: '五分钟接入。对话、生图、视频三类接口说明,完全兼容 OpenAI SDK。',
 }
-
-const clients = [
-  { n: 'Claude Code', d: '设置环境变量 ANTHROPIC_BASE_URL 指向本站,ANTHROPIC_AUTH_TOKEN 填你的 Key。' },
-  { n: 'Cherry Studio', d: '设置 → 模型服务 → 添加提供商 → 选 OpenAI 兼容 → 填入 API 地址和 Key。' },
-  { n: 'Cline / Roo Code', d: 'API Provider 选 OpenAI Compatible,Base URL 和 API Key 按下方填。' },
-  { n: 'LobeChat / NextChat', d: '在设置里把 OpenAI 接口地址改成本站地址即可。' },
-]
-
-const errors = [
-  ['401', '认证失败', 'Key 错误、已吊销,或请求头格式不对'],
-  ['402', '额度不足', '账户余额用完了,去控制台充值'],
-  ['404', '模型不存在', '模型名拼写错误,或该模型未在你的分组开放'],
-  ['429', '请求过快', '触发限流,降低并发或稍后重试'],
-  ['500', '上游异常', '上游波动,通常会自动切换渠道,建议重试'],
-  ['503', '暂时不可用', '所有渠道都不可用,请稍后再试'],
-]
 
 export default function Page() {
   return (
@@ -70,14 +55,47 @@ export default function Page() {
 
         <Block n="04" t="生图请求">
           <p className="mb-4 text-[14.5px] leading-relaxed text-[var(--muted)]">
-            生图按张计费,不按 token。<code className="font-mono text-[var(--c1)]">size</code>{' '}
-            决定计费档位:1024×1024 走 1K 价(¥0.05/张),更高分辨率走 4K 价(¥0.145/张)。
-            <span className="text-[var(--fg)]">生成失败不扣费。</span>
+            按张计费,生成失败不扣费。
+            <span className="text-[var(--fg)]">1K 与 4K 是两个独立模型名</span>
+            ——计费按模型名结算,<span className="text-[var(--fg)]">不看 size 参数</span>:
+            用 4K 模型却传 1024×1024,仍按 4K 单价扣费;1K 模型不支持 4K 尺寸,传了会被直接拒绝(不扣费)。
           </p>
           <CodeTabs snippets={imageSnippets} />
         </Block>
 
-        <Block n="05" t="常用客户端配置">
+        <Block n="05" t="生成视频">
+          <p className="mb-4 text-[14.5px] leading-relaxed text-[var(--muted)]">
+            视频是<span className="text-[var(--fg)]">异步</span>的:提交任务拿到{' '}
+            <code className="font-mono text-[var(--c1)]">task_id</code>,轮询到{' '}
+            <code className="font-mono text-[var(--c1)]">completed</code> 后下载。整段约 1–3 分钟。
+            按秒计费,总价 = 每秒单价 × <code className="font-mono text-[var(--c1)]">duration</code>,不填默认 4 秒。
+          </p>
+          <CodeTabs snippets={videoSnippets} />
+          <p className="mt-4 rounded-lg border border-[var(--warn)]/30 bg-[var(--warn)]/5 p-3.5 text-[13px] leading-relaxed text-[var(--muted)]">
+            <span className="font-semibold text-[var(--fg)]">视频地址是临时的,请及时下载或转存。</span>
+            {' '}生成结果不长期保留,不要把返回的 url 当作长期存储引用。
+          </p>
+        </Block>
+
+        <Block n="06" t="模型怎么选">
+          <div className="space-y-3">
+            {vendors.map((v) => (
+              <div key={v.n} className="glass p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="text-[14.5px] font-semibold">{v.n}</div>
+                  <div className="font-mono text-[11.5px] text-[var(--dim)]">{v.m}</div>
+                </div>
+                <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--muted)]">{v.d}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[13px] leading-relaxed text-[var(--dim)]">
+            所有厂商的文本模型都能用同一个 OpenAI 兼容端点调用,换 model 字段即可,其余代码不用改。
+            完整价格见 <a href="/pricing" className="text-[var(--c1)] hover:underline">价格页</a>。
+          </p>
+        </Block>
+
+        <Block n="07" t="常用客户端配置">
           <div className="grid gap-3 sm:grid-cols-2">
             {clients.map((c) => (
               <div key={c.n} className="glass p-4">
@@ -90,7 +108,7 @@ export default function Page() {
           </div>
         </Block>
 
-        <Block n="06" t="错误码">
+        <Block n="08" t="错误码">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-[14px]">
               <thead>

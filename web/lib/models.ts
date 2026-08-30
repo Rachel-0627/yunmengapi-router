@@ -116,6 +116,17 @@ export const imageModels: ImageModel[] = [
     featured: true,
   },
   {
+    id: 'gemini-3-pro-image-preview',
+    name: 'Nano Banana Pro',
+    vendor: 'Google',
+    blurb: '高分辨率直出,单张最高 5504×3072、300 DPI,可直接用于印刷与大屏',
+    tiers: [
+      { label: '5504×3072', price: 0.23, note: '调用时须传 quality="4K"' },
+    ],
+    tags: ['文生图', '高分辨率'],
+    featured: true,
+  },
+  {
     id: 'gpt-image2-4k',
     name: 'GPT Image 2 · 4K',
     vendor: 'OpenAI',
