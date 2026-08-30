@@ -3,7 +3,7 @@ FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -g 1001 -S nodejs && adduser -S shim -u 1001
-COPY --chown=shim:nodejs server.js ./
+COPY --chown=shim:nodejs *.js ./
 USER shim
 EXPOSE 8080
 CMD ["node", "server.js"]

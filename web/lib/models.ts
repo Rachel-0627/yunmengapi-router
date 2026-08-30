@@ -111,7 +111,7 @@ export const imageModels: ImageModel[] = [
     name: 'GPT Image 2 · 1K',
     vendor: 'OpenAI',
     blurb: '文生图与图生图,指令遵循准确,适合海报、配图、电商图',
-    tiers: [{ label: '1024px', price: 0.05, note: '日常出图' }],
+    tiers: [{ label: '1024×1024', price: 0.05, note: '日常出图,仅支持 1K' }],
     tags: ['文生图', '图生图'],
     featured: true,
   },
@@ -119,9 +119,11 @@ export const imageModels: ImageModel[] = [
     id: 'gpt-image2-4k',
     name: 'GPT Image 2 · 4K',
     vendor: 'OpenAI',
-    blurb: '同一模型的高分辨率档,细节更足,可直接用于印刷',
-    tiers: [{ label: '4K', price: 0.145, note: '高分辨率' }],
-    tags: ['文生图', '高清'],
+    blurb: '原生 3840×2160 直出,细节足以直接印刷或上大屏',
+    tiers: [
+      { label: '3840×2160', price: 0.26, note: '调用时须传 size="3840x2160"' },
+    ],
+    tags: ['文生图', '真 4K'],
   },
 ]
 

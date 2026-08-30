@@ -74,6 +74,11 @@ export default function Page() {
         <p className="mt-2 text-[13.5px] text-[var(--dim)]">
           按张计费,生成失败不扣费。1K 与 4K 是两个独立模型名,按下方 id 调用
         </p>
+        <p className="mt-3 rounded-lg border border-[var(--warn)]/30 bg-[var(--warn)]/5 p-3.5 text-[13px] leading-relaxed text-[var(--muted)]">
+          <span className="font-semibold text-[var(--fg)]">调用 4K 时请务必传 <code className="font-mono">size=&quot;3840x2160&quot;</code>。</span>
+          {' '}计费按模型名结算,不看 size 参数——用 4K 模型却传 1024×1024,仍按 4K 单价扣费。
+          反之 1K 模型不支持 4K 尺寸,传了会被直接拒绝(不扣费)。
+        </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           {imageModels.map((m) => (
             <div key={m.id} className="glass p-5">
@@ -171,6 +176,7 @@ export default function Page() {
             { t: '实时扣费', d: '每次请求结束立即结算,控制台能看到每一条调用的明细和花费。' },
             { t: '额度不过期', d: '充值的额度长期有效,不设过期时间,也不会因为长期不用而清零。' },
             { t: '生图失败不扣费', d: '内容审核拒绝、上游超时导致的失败,不扣额度。' },
+            { t: '4K 是原生直出', d: '4K 档按 3840×2160 原生渲染,可直接用于印刷和大屏展示。' },
             { t: '视频按秒结算', d: '总价 = 每秒单价 × 实际生成时长。请求时用 duration 指定秒数,不填默认 4 秒。' },
             { t: '支付宝 / 微信充值', d: '充值实时到账,无需信用卡,无需绑定境外支付方式。' },
           ].map((x) => (
