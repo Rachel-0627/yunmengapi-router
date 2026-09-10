@@ -208,10 +208,16 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
 - [ ] **在线支付** —— 需易支付商户号;在那之前只能发卡密
 - [ ] **关于页** —— 内容已备好在 `docs/关于页内容.md`,待粘进后台
       (后台「关于」留空时 new-api 会显示带 New API 字眼的默认占位屏)
-- [ ] **前端改动待构建上线** —— 已改用 GitHub Actions 构建,不再依赖本机磁盘
-      ① 模型广场视频模型显示「按秒计费」(`model-billing-mode-badge.tsx`)
-      ② 充值页「点此获取」→「点此购买兑换券」,字号加大加粗(`recharge-form-card.tsx` + zh/zh-TW)
-      改动存为补丁:`deploy/newapi/yunmeng.patch`,构建见 `.github/workflows/build-newapi.yml`
+- [x] ~~前端改动上线~~ **2026-09-10 已部署并验证生效**
+      ① 模型广场视频模型显示「按秒计费」 ② 充值页「点此购买兑换券」加大加粗
+      线上版本 `v1.0.0-rc.25-persecond`,镜像 `ghcr.io/rachel-0627/yunmengapi-newapi`
+      按 digest 锁定。改动存为补丁 `deploy/newapi/yunmeng.patch`,
+      构建见 `.github/workflows/build-newapi.yml`(含冒烟测试)
+- [ ] **`gpt-5.4` / `gpt-5.4-mini` 已从模型广场消失** —— 上游返回 `service_unavailable`
+      后渠道被 new-api 自动禁用。这两个模型未上营销站,客户看不到,不影响销售。
+      待上游恢复后在控制台重新启用渠道。
+- [ ] 服务器上有两份废弃的 compose 待清理:
+      `/opt/yunmeng/tmp_upload_/` 与 `/opt/yunmeng/deploy/new-api/`
 - [ ] **`gpt-6-astra` 待在控制台配倍率** —— 营销站已上架(售价 ¥10/¥50),
       控制台倍率还没填:`model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
 - [ ] **GPT 系列成本未测算** —— `gpt-5.4/5.4-mini/5.5/5.6-sol/5.6-terra` 已上架计费,
