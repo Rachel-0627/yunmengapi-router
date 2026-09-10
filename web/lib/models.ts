@@ -71,6 +71,18 @@ export const textModels: TextModel[] = [
     tags: ['极速', '低价'],
     featured: true,
   },
+  {
+    id: 'gpt-6-astra',
+    name: 'GPT-6 Astra',
+    vendor: 'OpenAI',
+    blurb: '新一代通用推理与编程模型',
+    priceIn: 10.0,
+    priceOut: 50.0,
+    officialIn: 72,
+    officialOut: 360,
+    tags: ['推理', '编码', '旗舰'],
+    featured: true,
+  },
 ]
 
 /** 附上"比官方省百分之多少",输入与输出比例一致,取输入即可 */
