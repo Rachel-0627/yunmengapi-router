@@ -72,6 +72,48 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: 冒烟测试(不通过就不算成功)
+        run: |
+          IMG='${{ steps.img.outputs.name }}:${{ github.sha }}'
+
+          echo "── ① 补丁内容是否真的编进了二进制 ──"
+          # go:embed 不压缩,前端产物以原文存在二进制里,可直接 grep。
+          # 用 ASCII 串判定,避免 Vite 把中文转义成 \uXXXX 造成误报。
+          fail=0
+          for s in 'v1.0.0-rc.25-persecond' 'Per Second'; do
+            if docker run --rm --entrypoint sh "$IMG" -c "grep -qa '$s' /new-api"; then
+              echo "  ✓ $s"
+            else
+              echo "  ✗ 缺失:$s"; fail=1
+            fi
+          done
+          # 中文两种形态都试,任一命中即可
+          if docker run --rm --entrypoint sh "$IMG" -c \
+               "grep -qa '点此购买兑换券' /new-api || grep -qa '\\u70b9\\u6b64\\u8d2d\\u4e70\\u5151\\u6362\\u5238' /new-api"; then
+            echo "  ✓ 点此购买兑换券"
+          else
+            echo "  ✗ 缺失:点此购买兑换券"; fail=1
+          fi
+          [ "$fail" = 0 ] || exit 1
+
+          echo "── ② 容器能不能正常起来 ──"
+          docker run -d --name smoke -p 3000:3000 "$IMG"
+          ok=0
+          for i in $(seq 1 40); do
+            if curl -sf http://localhost:3000/api/status >/dev/null 2>&1; then
+              ok=1; echo "  ✓ 约 $((i*3)) 秒内就绪"; break
+            fi
+            sleep 3
+          done
+          if [ "$ok" != 1 ]; then
+            echo "  ✗ 启动超时,日志末尾:"; docker logs smoke 2>&1 | tail -40; exit 1
+          fi
+
+          echo "── ③ 服务自报的版本 ──"
+          curl -s http://localhost:3000/api/status \
+            | python3 -c "import json,sys;print('  version =',json.load(sys.stdin)['data'].get('version'))"
+          docker rm -f smoke >/dev/null
+
       - name: 输出拉取命令
         run: |
           echo "### 镜像已构建 :rocket:" >> "$GITHUB_STEP_SUMMARY"
