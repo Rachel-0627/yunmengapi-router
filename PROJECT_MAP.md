@@ -171,6 +171,22 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
 自编只能证明"我用这份源码编的",签名能证明"官方 CI 用该 tag 的源码编的"。
 配合 `@sha256` 摘要锁定,内容被替换会直接拉取失败。
 
+### 2026-09-10 修订:改用自建镜像
+
+前端需要定制(按秒计费标签、兑换码文案),而前端是 `//go:embed` 进二进制的,
+改了就必须重编 —— 官方镜像这条路走不通了。
+
+**换成自建后失去的:** 官方的 cosign 签名与 SLSA provenance。
+**换成后得到的:** 构建过程完全可复现且可审计 ——
+上游 commit 锁定在 `deploy/newapi/base-commit`,改动是 7.6KB 的可读补丁,
+构建流水线在 `.github/workflows/build-newapi.yml`,且每次构建跑冒烟测试
+(校验补丁内容真的编进二进制 + 容器能起来)。
+
+`@sha256` 摘要锁定照旧。回滚只需把 compose 里的 image 换回官方那行。
+
+**待办:** `docker/build-push-action` 支持 `provenance: true` / `sbom: true`,
+开启可补回一部分溯源能力,尚未做。
+
 数据层设为 `internal` 网络,postgres 与 redis 不映射任何主机端口。
 
 已核查:new-api **无任何遥测、心跳、许可证校验或激活码**,启动不联外网;

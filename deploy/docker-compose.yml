@@ -62,7 +62,12 @@ services:
   #   配合下面的 @sha256 摘要锁定,内容被替换会直接拉取失败。
   #   验证方法见 docs/部署指南.md 的「校验镜像签名」。
   new-api:
-    image: calciumion/new-api:v1.0.0-rc.25@sha256:54a0b10924aa75fa5b5947208b820ced66b6ef4b445b35f122b31d80676aba2b
+    # 云梦定制版:上游 2d8e50bf + deploy/newapi/yunmeng.patch(21 行 UI 改动)。
+    # 由 GitHub Actions 构建并跑过冒烟测试,见 .github/workflows/build-newapi.yml。
+    # 仍按 digest 锁定,内容被替换会拉取失败。
+    # 回滚:换回下面这行官方签名镜像即可
+    #   calciumion/new-api:v1.0.0-rc.25@sha256:54a0b10924aa75fa5b5947208b820ced66b6ef4b445b35f122b31d80676aba2b
+    image: ghcr.io/rachel-0627/yunmengapi-newapi:06bc1bb0de54893bde753a3abbfd9cfa7989ac5d@sha256:324d13fe6d62a7e391cd293d374fa0bd49debd5f8c31928d6c0b41601834b2cd
     container_name: new-api
     restart: always
     command: --log-dir /app/logs
