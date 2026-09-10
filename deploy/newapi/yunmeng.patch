@@ -1,0 +1,148 @@
+diff --git a/Dockerfile b/Dockerfile
+index 5be311b..17b3736 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,4 @@
+-FROM oven/bun:1@sha256:0733e50325078969732ebe3b15ce4c4be5082f18c4ac1a0f0ca4839c2e4e42a7 AS builder
++FROM --platform=$BUILDPLATFORM oven/bun:1@sha256:0733e50325078969732ebe3b15ce4c4be5082f18c4ac1a0f0ca4839c2e4e42a7 AS builder
+ 
+ WORKDIR /build/web
+ COPY web/package.json web/bun.lock ./
+@@ -7,7 +7,7 @@ COPY ./web ./
+ COPY ./VERSION /build/VERSION
+ RUN DISABLE_ESLINT_PLUGIN='true' VITE_REACT_APP_VERSION=$(cat /build/VERSION) bun run build
+ 
+-FROM golang:1.26.1-alpine@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder2
++FROM --platform=$BUILDPLATFORM golang:1.26.1-alpine@sha256:2389ebfa5b7f43eeafbd6be0c3700cc46690ef842ad962f6c5bd6be49ed82039 AS builder2
+ ENV GO111MODULE=on CGO_ENABLED=0 GOWORK=off
+ 
+ ARG TARGETOS
+diff --git a/VERSION b/VERSION
+index e69de29..6f4b48f 100644
+--- a/VERSION
++++ b/VERSION
+@@ -0,0 +1 @@
++v1.0.0-rc.25-persecond
+diff --git a/web/src/features/pricing/components/model-billing-mode-badge.tsx b/web/src/features/pricing/components/model-billing-mode-badge.tsx
+index 86f6972..d38f080 100644
+--- a/web/src/features/pricing/components/model-billing-mode-badge.tsx
++++ b/web/src/features/pricing/components/model-billing-mode-badge.tsx
+@@ -40,6 +40,10 @@ export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
+   } else if (isTokenBasedModel(props.model)) {
+     label = t('Token-based')
+     variant = 'info'
++  } else if (props.model.supported_endpoint_types?.includes('openai-video')) {
++    // 视频按秒结算(固定价格 × 请求秒数),不是每次一口价
++    label = t('Per Second')
++    variant = 'purple'
+   }
+ 
+   return (
+diff --git a/web/src/features/wallet/components/recharge-form-card.tsx b/web/src/features/wallet/components/recharge-form-card.tsx
+index 95f3663..15f1359 100644
+--- a/web/src/features/wallet/components/recharge-form-card.tsx
++++ b/web/src/features/wallet/components/recharge-form-card.tsx
+@@ -536,16 +536,16 @@ export function RechargeFormCard({
+             </Button>
+           </div>
+           {topupLink && (
+-            <p className='text-muted-foreground text-xs'>
++            <p className='text-muted-foreground text-sm'>
+               {t('Need a redemption code?')}{' '}
+               <a
+                 href={topupLink}
+                 target='_blank'
+                 rel='noopener noreferrer'
+-                className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
++                className='text-primary inline-flex items-center gap-1 text-base font-semibold underline underline-offset-4 hover:opacity-80'
+               >
+                 {t('Get one here')}
+-                <ExternalLink className='h-3 w-3' />
++                <ExternalLink className='h-4 w-4' />
+               </a>
+             </p>
+           )}
+diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
+index 86095b2..a2f7d7a 100644
+--- a/web/src/i18n/locales/en.json
++++ b/web/src/i18n/locales/en.json
+@@ -2069,7 +2069,7 @@
+     "footer.columns.related.links.oneApi": "One API",
+     "footer.columns.related.title": "Related Projects",
+     "footer.defaultCopyright": "All rights reserved.",
+-    "footer.new\u0061pi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
++    "footer.newapi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
+     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment",
+     "For private deployments, format: https://fastgpt.run/api/openapi": "For private deployments, format: https://fastgpt.run/api/openapi",
+     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.",
+@@ -5316,6 +5316,7 @@
+     "Zero retention": "Zero retention",
+     "Zhipu": "Zhipu",
+     "Zhipu V4": "Zhipu V4",
+-    "Zoom": "Zoom"
++    "Zoom": "Zoom",
++    "Per Second": "Per Second"
+   }
+ }
+diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
+index 25250e2..8969df1 100644
+--- a/web/src/i18n/locales/zh-TW.json
++++ b/web/src/i18n/locales/zh-TW.json
+@@ -2069,7 +2069,7 @@
+     "footer.columns.related.links.oneApi": "One API",
+     "footer.columns.related.title": "相關項目",
+     "footer.defaultCopyright": "版權所有。",
+-    "footer.new\u0061pi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
++    "footer.newapi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
+     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "對於 2025 年 5 月 10 日之後新增的渠道，在部署時無需從模型名稱中移除 \".\"",
+     "For private deployments, format: https://fastgpt.run/api/openapi": "對於私有部署，格式為：https://fastgpt.run/api/openapi",
+     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "基於安全考量，現有存取令牌無法再次顯示。僅在需要新令牌時重新生成。",
+@@ -2137,7 +2137,7 @@
+     "Generic cache": "通用緩存",
+     "Get advice": "獲取建議",
+     "Get notified when balance falls below this value": "當餘額低於此值時接收通知",
+-    "Get one here": "點此獲取",
++    "Get one here": "點此購買兌換券",
+     "Get started": "開始使用",
+     "Get Started": "開始使用",
+     "GitHub": "GitHub",
+@@ -5316,6 +5316,7 @@
+     "Zero retention": "零數據保留",
+     "Zhipu": "智譜",
+     "Zhipu V4": "智譜 V4",
+-    "Zoom": "縮放"
++    "Zoom": "縮放",
++    "Per Second": "按秒計費"
+   }
+ }
+diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
+index 457b1c5..199a860 100644
+--- a/web/src/i18n/locales/zh.json
++++ b/web/src/i18n/locales/zh.json
+@@ -2069,7 +2069,7 @@
+     "footer.columns.related.links.oneApi": "One API",
+     "footer.columns.related.title": "相关项目",
+     "footer.defaultCopyright": "版权所有。",
+-    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
++    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
+     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
+     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
+     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "出于安全考虑，现有访问令牌无法再次显示。仅在需要新令牌时重新生成。",
+@@ -2137,7 +2137,7 @@
+     "Generic cache": "通用缓存",
+     "Get advice": "获取建议",
+     "Get notified when balance falls below this value": "当余额低于此值时接收通知",
+-    "Get one here": "点此获取",
++    "Get one here": "点此购买兑换券",
+     "Get started": "开始使用",
+     "Get Started": "开始使用",
+     "GitHub": "GitHub",
+@@ -5316,6 +5316,7 @@
+     "Zero retention": "零数据保留",
+     "Zhipu": "智谱",
+     "Zhipu V4": "智谱 V4",
+-    "Zoom": "缩放"
++    "Zoom": "缩放",
++    "Per Second": "按秒计费"
+   }
+ }

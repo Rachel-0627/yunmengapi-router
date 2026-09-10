@@ -110,6 +110,9 @@
 
 配置文件全在 `deploy/`,操作步骤见 `docs/部署指南.md`。
 
+`scripts/try-models.sh`(101 行)—— 同一个问题问遍所有文本模型,
+对比回答质量、耗时、吐字速度和实际花费。价格表内嵌在脚本里,**改价后要同步**。
+
 | 文件 | 职责 |
 |---|---|
 | `deploy/docker-compose.yml` | 六个容器:caddy / web / new-api / image-shim / postgres / redis。**已加固** |
@@ -154,6 +157,8 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
 
 - `new-api`:官方签名镜像,digest 锁定,不编译
 - `web`:开发机跑 `deploy/build-web.sh`,只上传 `.next/standalone` 成品
+- `new-api` 定制版:**GitHub Actions 构建**(见 `deploy/newapi/README.md`)。
+  本机只有 4.6G 空余,跑不动;Actions 的 runner 有 14G,且不占本地资源。
 
 **核心加固决定:new-api 使用官方镜像并按 sha256 摘要锁定。**
 
@@ -185,6 +190,16 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
 - [x] ~~自动备份~~ 每日 04:00,保留 14 天,已实跑验证
 - [ ] **走通一笔真实充值** —— 生成卡密 → 兑换 → 余额到账 → 消费。**这是唯一还没端到端验证的链路**
 - [ ] **在线支付** —— 需易支付商户号;在那之前只能发卡密
+- [ ] **关于页** —— 内容已备好在 `docs/关于页内容.md`,待粘进后台
+      (后台「关于」留空时 new-api 会显示带 New API 字眼的默认占位屏)
+- [ ] **前端改动待构建上线** —— 已改用 GitHub Actions 构建,不再依赖本机磁盘
+      ① 模型广场视频模型显示「按秒计费」(`model-billing-mode-badge.tsx`)
+      ② 充值页「点此获取」→「点此购买兑换券」,字号加大加粗(`recharge-form-card.tsx` + zh/zh-TW)
+      改动存为补丁:`deploy/newapi/yunmeng.patch`,构建见 `.github/workflows/build-newapi.yml`
+- [ ] **`gpt-6-astra` 待在控制台配倍率** —— 营销站已上架(售价 ¥10/¥50),
+      控制台倍率还没填:`model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
+- [ ] **GPT 系列成本未测算** —— `gpt-5.4/5.4-mini/5.5/5.6-sol/5.6-terra` 已上架计费,
+      但进货价与毛利从未核过,也没进营销站 `models.ts`
 
 ### ⚠️ 发卡平台 catfk.com 对境外 IP 重置连接
 
