@@ -218,6 +218,9 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
       待上游恢复后在控制台重新启用渠道。
 - [ ] 服务器上有两份废弃的 compose 待清理:
       `/opt/yunmeng/tmp_upload_/` 与 `/opt/yunmeng/deploy/new-api/`
+- [ ] **代理佣金功能待开发** —— 规则见 `docs/代理佣金规则.md`,
+      实现方案见 `docs/代理佣金实现方案.md`(约 290 行,挂在 `PostConsumeQuota`)。
+      前置条件:先补邮箱验证,否则零门槛注册会让返佣变成刷子提款机
 - [ ] **`gpt-6-astra` 待在控制台配倍率** —— 营销站已上架(售价 ¥10/¥50),
       控制台倍率还没填:`model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
 - [ ] **GPT 系列成本未测算** —— `gpt-5.4/5.4-mini/5.5/5.6-sol/5.6-terra` 已上架计费,
