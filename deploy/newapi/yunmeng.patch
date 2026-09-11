@@ -1260,7 +1260,7 @@ index e2f7073..18292c8 100644
 +  return res.data
 +}
 diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-index e1824d3..6b90909 100644
+index e1824d3..8b93256 100644
 --- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
 +++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
 @@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -1361,7 +1361,7 @@ index e1824d3..6b90909 100644
 -          />
 -          {hasRewards && (
 +        <div className='min-w-0'>
-+          <div className='text-muted-foreground mb-1 text-[11px] font-medium tracking-wider uppercase'>
++          <div className='text-muted-foreground mb-1.5 text-center text-sm font-medium'>
 +            {t('Copy referral link')}
 +          </div>
 +          <div className='flex items-center gap-2'>
