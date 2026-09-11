@@ -367,6 +367,61 @@ index 86f6972..d38f080 100644
    }
  
    return (
+diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
+index e1824d3..8605a25 100644
+--- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
++++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
+@@ -81,11 +81,21 @@ export function AffiliateRewardsCard({
+           </div>
+         </div>
+ 
+-        <div className='grid grid-cols-3 gap-1.5 text-center'>
++        <div className='grid grid-cols-4 gap-1.5 text-center'>
+           {[
+-            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
+-            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
+-            [t('Invites'), String(user?.aff_count ?? 0)],
++            [t('Invited Users'), String(user?.aff_count ?? 0)],
++            [t('Total Commission'), formatQuota(user?.aff_history_quota ?? 0)],
++            // 已提现 = 累计佣金 - 当前余额,不需要额外字段
++            [
++              t('Withdrawn'),
++              formatQuota(
++                Math.max(
++                  0,
++                  (user?.aff_history_quota ?? 0) - (user?.aff_quota ?? 0)
++                )
++              ),
++            ],
++            [t('Withdrawable'), formatQuota(user?.aff_quota ?? 0)],
+           ].map(([label, value]) => (
+             <div key={label}>
+               <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
+@@ -112,16 +122,14 @@ export function AffiliateRewardsCard({
+             tooltip={t('Copy referral link')}
+             aria-label={t('Copy referral link')}
+           />
+-          {hasRewards && (
+-            <Button
+-              onClick={onTransfer}
+-              disabled={!complianceConfirmed}
+-              className='h-9 shrink-0 px-3'
+-              size='sm'
+-            >
+-              {t('Transfer to Balance')}
+-            </Button>
+-          )}
++          <Button
++            onClick={onTransfer}
++            disabled={!complianceConfirmed || !hasRewards}
++            className='h-9 shrink-0 px-3'
++            size='sm'
++          >
++            {t('Withdraw to Credit')}
++          </Button>
+         </div>
+         {!complianceConfirmed ? (
+           <p className='text-muted-foreground text-xs lg:col-span-3'>
 diff --git a/web/src/features/wallet/components/recharge-form-card.tsx b/web/src/features/wallet/components/recharge-form-card.tsx
 index 95f3663..15f1359 100644
 --- a/web/src/features/wallet/components/recharge-form-card.tsx
@@ -392,40 +447,27 @@ index 95f3663..15f1359 100644
              </p>
            )}
 diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
-index 86095b2..a2f7d7a 100644
+index 86095b2..adb9a00 100644
 --- a/web/src/i18n/locales/en.json
 +++ b/web/src/i18n/locales/en.json
-@@ -2069,7 +2069,7 @@
-     "footer.columns.related.links.oneApi": "One API",
-     "footer.columns.related.title": "Related Projects",
-     "footer.defaultCopyright": "All rights reserved.",
--    "footer.new\u0061pi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
-+    "footer.newapi.projectAttributionSuffix": "All rights reserved. Designed and developed by the project contributors.",
-     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment",
-     "For private deployments, format: https://fastgpt.run/api/openapi": "For private deployments, format: https://fastgpt.run/api/openapi",
-     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.",
-@@ -5316,6 +5316,7 @@
+@@ -5316,6 +5316,12 @@
      "Zero retention": "Zero retention",
      "Zhipu": "Zhipu",
      "Zhipu V4": "Zhipu V4",
 -    "Zoom": "Zoom"
 +    "Zoom": "Zoom",
++    "Invited Users": "Invited Users",
++    "Total Commission": "Total Commission",
++    "Withdrawn": "Withdrawn",
++    "Withdrawable": "Withdrawable",
++    "Withdraw to Credit": "Withdraw to Credit",
 +    "Per Second": "Per Second"
    }
  }
 diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
-index 25250e2..8969df1 100644
+index 25250e2..c17ed34 100644
 --- a/web/src/i18n/locales/zh-TW.json
 +++ b/web/src/i18n/locales/zh-TW.json
-@@ -2069,7 +2069,7 @@
-     "footer.columns.related.links.oneApi": "One API",
-     "footer.columns.related.title": "相關項目",
-     "footer.defaultCopyright": "版權所有。",
--    "footer.new\u0061pi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
-+    "footer.newapi.projectAttributionSuffix": "版權所有，由項目貢獻者設計與開發。",
-     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "對於 2025 年 5 月 10 日之後新增的渠道，在部署時無需從模型名稱中移除 \".\"",
-     "For private deployments, format: https://fastgpt.run/api/openapi": "對於私有部署，格式為：https://fastgpt.run/api/openapi",
-     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "基於安全考量，現有存取令牌無法再次顯示。僅在需要新令牌時重新生成。",
 @@ -2137,7 +2137,7 @@
      "Generic cache": "通用緩存",
      "Get advice": "獲取建議",
@@ -435,28 +477,24 @@ index 25250e2..8969df1 100644
      "Get started": "開始使用",
      "Get Started": "開始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,7 @@
+@@ -5316,6 +5316,12 @@
      "Zero retention": "零數據保留",
      "Zhipu": "智譜",
      "Zhipu V4": "智譜 V4",
 -    "Zoom": "縮放"
 +    "Zoom": "縮放",
++    "Invited Users": "邀請人數",
++    "Total Commission": "佣金總收入",
++    "Withdrawn": "已提現",
++    "Withdrawable": "待提現",
++    "Withdraw to Credit": "提現轉額度",
 +    "Per Second": "按秒計費"
    }
  }
 diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
-index 457b1c5..199a860 100644
+index 457b1c5..4af067d 100644
 --- a/web/src/i18n/locales/zh.json
 +++ b/web/src/i18n/locales/zh.json
-@@ -2069,7 +2069,7 @@
-     "footer.columns.related.links.oneApi": "One API",
-     "footer.columns.related.title": "相关项目",
-     "footer.defaultCopyright": "版权所有。",
--    "footer.new\u0061pi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
-+    "footer.newapi.projectAttributionSuffix": "版权所有，由项目贡献者设计与开发。",
-     "For channels added after May 10, 2025, no need to remove \".\" from model names during deployment": "对于 2025 年 5 月 10 日之后添加的渠道，在部署时无需从模型名称中移除 \".\"",
-     "For private deployments, format: https://fastgpt.run/api/openapi": "对于私有部署，格式为：https://fastgpt.run/api/openapi",
-     "For security, existing access tokens cannot be displayed. Regenerate only when you need a new token.": "出于安全考虑，现有访问令牌无法再次显示。仅在需要新令牌时重新生成。",
 @@ -2137,7 +2137,7 @@
      "Generic cache": "通用缓存",
      "Get advice": "获取建议",
@@ -466,12 +504,17 @@ index 457b1c5..199a860 100644
      "Get started": "开始使用",
      "Get Started": "开始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,7 @@
+@@ -5316,6 +5316,12 @@
      "Zero retention": "零数据保留",
      "Zhipu": "智谱",
      "Zhipu V4": "智谱 V4",
 -    "Zoom": "缩放"
 +    "Zoom": "缩放",
++    "Invited Users": "邀请人数",
++    "Total Commission": "佣金总收入",
++    "Withdrawn": "已提现",
++    "Withdrawable": "待提现",
++    "Withdraw to Credit": "提现转额度",
 +    "Per Second": "按秒计费"
    }
  }
