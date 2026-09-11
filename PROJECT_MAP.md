@@ -218,9 +218,14 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
       待上游恢复后在控制台重新启用渠道。
 - [ ] 服务器上有两份废弃的 compose 待清理:
       `/opt/yunmeng/tmp_upload_/` 与 `/opt/yunmeng/deploy/new-api/`
-- [ ] **代理佣金功能待开发** —— 规则见 `docs/代理佣金规则.md`,
-      实现方案见 `docs/代理佣金实现方案.md`(约 290 行,挂在 `PostConsumeQuota`)。
-      前置条件:先补邮箱验证,否则零门槛注册会让返佣变成刷子提款机
+- [x] ~~代理佣金后端~~ **2026-09-11 已上线并实测通过**(线上开关已开)
+      实测:Andy1(69)消费 5300 quota → Andy(2)得佣金 1590,比例正确
+      ⚠️ 钩子必须挂 `SettleBilling` 而非 `PostConsumeQuota` —— 后者只是
+      回退路径,主流程走 `BillingSession.Settle`,且它收到的是扣除预扣后的差额
+- [ ] **代理佣金还缺三块**:管理员扣减 `aff_quota` 的接口(人工提现用)、
+      前端推荐页展示真实数据、后台配置界面(现只能改数据库 JSON)
+- [ ] ⚠️ **佣金已开但无邮箱验证** —— 注册零门槛,自注册套利风险敞口存在
+- [ ] **`gpt-6-astra` 待在控制台配倍率**
 - [ ] **`gpt-6-astra` 待在控制台配倍率** —— 营销站已上架(售价 ¥10/¥50),
       控制台倍率还没填:`model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
 - [ ] **GPT 系列成本未测算** —— `gpt-5.4/5.4-mini/5.5/5.6-sol/5.6-terra` 已上架计费,
