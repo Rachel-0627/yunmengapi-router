@@ -234,7 +234,11 @@ Opus/Sonnet 的毛利会从 60% 跌到 20%,且 Haiku 会直接不可用(它不�
       `middleware.TurnstileCheck()` 已挂在注册接口上但未启用,
       要挡机器人时开它即可,免费且不依赖邮件
       自注册套利主要靠「提现全人工、逐笔过目」兜底
-- [ ] **`gpt-6-astra` 待在控制台配倍率**
+- [x] ~~`gpt-6-astra` 控制台倍率~~ 已配并线上核对:
+      `model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
+      → 输入 ¥10 / 输出 ¥50 / 缓存读 ¥1 / 缓存写 ¥12.5
+- [ ] **营销站待部署** —— `models.ts` 里已有 gpt-6-astra,但线上还没更新,
+      客户在官网看不到这个模型(控制台可用,不影响已知道型号的客户)
 - [ ] **`gpt-6-astra` 待在控制台配倍率** —— 营销站已上架(售价 ¥10/¥50),
       控制台倍率还没填:`model_ratio=5` `completion_ratio=5` `cache_ratio=0.1` `create_cache_ratio=1.25`
 - [ ] **GPT 系列成本未测算** —— `gpt-5.4/5.4-mini/5.5/5.6-sol/5.6-terra` 已上架计费,
