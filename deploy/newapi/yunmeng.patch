@@ -242,29 +242,48 @@ index 0000000..a6180d1
 +			logger.LogQuota(r.Amount), r.FromUserId, r.ModelName, r.Level))
 +	}
 +}
-diff --git a/service/quota.go b/service/quota.go
-index 359956a..53ef67c 100644
---- a/service/quota.go
-+++ b/service/quota.go
-@@ -461,6 +461,18 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
- 		}
- 	}
+diff --git a/service/billing.go b/service/billing.go
+index 7ffa537..baf4e6b 100644
+--- a/service/billing.go
++++ b/service/billing.go
+@@ -7,6 +7,8 @@ import (
+ 	"github.com/QuantumNous/new-api/logger"
+ 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+ 	"github.com/QuantumNous/new-api/relaykit/types"
++
++	"github.com/bytedance/gopkg/util/gopool"
+ 	"github.com/gin-gonic/gin"
+ )
  
-+	// 代理佣金:只对钱包扣费且真实产生消费的请求派发。
-+	// 订阅计费不走钱包,其收入已另行结算,不重复计佣;
-+	// Playground 是站内试用,也不计。
-+	// 异步执行 —— 佣金不该拖慢用户请求,失败也只记日志不影响主链路。
-+	if quota > 0 && !relayInfo.IsPlayground &&
+@@ -48,7 +50,28 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
+ 
+ // SettleBilling 执行计费结算。如果 RelayInfo 上有 BillingSession 则通过 session 结算，
+ // 否则回退到旧的 PostConsumeQuota 路径（兼容按次计费等场景）。
++//
++// 代理佣金挂在这一层而不是 PostConsumeQuota：后者只是回退路径，主流程走
++// BillingSession，挂在那里对绝大多数请求不会触发。且这里拿到的 actualQuota
++// 是完整消费额，PostConsumeQuota 收到的是扣除预扣后的差额。
+ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
++	err := settleBilling(ctx, relayInfo, actualQuota)
++	if err != nil {
++		return err
++	}
++	// 订阅计费的收入已另行结算，Playground 是站内试用，均不计佣。
++	// 异步执行——佣金不该拖慢用户请求，失败也只记日志不影响主链路。
++	if actualQuota > 0 && !relayInfo.IsPlayground &&
 +		relayInfo.BillingSource != BillingSourceSubscription {
 +		userId, modelName := relayInfo.UserId, relayInfo.OriginModelName
 +		gopool.Go(func() {
-+			DispatchAffiliateCommission(userId, modelName, quota)
++			DispatchAffiliateCommission(userId, modelName, actualQuota)
 +		})
 +	}
++	return nil
++}
 +
- 	return result, nil
- }
- 
++func settleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuota int) error {
+ 	if relayInfo.Billing != nil {
+ 		preConsumed := relayInfo.Billing.GetPreConsumedQuota()
+ 		delta := actualQuota - preConsumed
 diff --git a/setting/operation_setting/affiliate_setting.go b/setting/operation_setting/affiliate_setting.go
 new file mode 100644
 index 0000000..4084c4f
