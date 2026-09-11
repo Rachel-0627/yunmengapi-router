@@ -25,21 +25,17 @@ index e69de29..6f4b48f 100644
 +v1.0.0-rc.25-persecond
 diff --git a/model/affiliate.go b/model/affiliate.go
 new file mode 100644
-index 0000000..091dbd7
+index 0000000..30a3831
 --- /dev/null
 +++ b/model/affiliate.go
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,72 @@
 +package model
 +
-+import (
-+	"time"
-+
-+	"gorm.io/gorm"
-+)
++import "gorm.io/gorm"
 +
 +// AffiliateCommission 代理佣金流水。
 +//
-+// 为什么必须有这张表:核查期判定、提现审核、代理查明细,三件事都要按笔追溯,
++// 为什么必须有这张表:提现核对与代理查明细都要按笔追溯,
 +// 只靠 users.aff_quota 一个汇总数字做不到。
 +type AffiliateCommission struct {
 +	Id         int    `json:"id"`
@@ -54,10 +50,12 @@ index 0000000..091dbd7
 +}
 +
 +const (
-+	AffCommissionActive    = "active"    // 正常。是否可提现按 created_at 与核查期实时判断
-+	AffCommissionRevoked   = "revoked"   // 经核查确认异常,已冲销
-+	AffCommissionWithdrawn = "withdrawn" // 已人工提现
++	AffCommissionActive  = "active"  // 正常
++	AffCommissionRevoked = "revoked" // 经核查确认异常,已冲销
 +)
++
++// 提现不在本表标记 —— 提现是按金额从余额扣减,与具体是哪几笔佣金无关,
++// 单独记在 affiliate_withdrawals 表里。可提现额就是 users.aff_quota。
 +
 +// RecordAffiliateCommissions 在一个事务里写入多笔佣金并累加到各自的 aff_quota。
 +// 任一笔失败则整体回滚,避免流水与余额对不上。
@@ -83,20 +81,6 @@ index 0000000..091dbd7
 +		}
 +		return nil
 +	})
-+}
-+
-+// SumWithdrawableCommission 汇总可提现佣金。
-+//
-+// 不用定时任务把 pending 刷成 available —— 核查期是否已过,查询时按
-+// created_at 现算即可,少一套 cron 就少一处会出错的地方。
-+func SumWithdrawableCommission(userId, holdHours int) (int, error) {
-+	cutoff := time.Now().Add(-time.Duration(holdHours) * time.Hour).Unix()
-+	var sum int
-+	err := DB.Model(&AffiliateCommission{}).
-+		Where("user_id = ? AND status = ? AND created_at <= ?",
-+			userId, AffCommissionActive, cutoff).
-+		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
-+	return sum, err
 +}
 +
 +// GetUserAffiliateCommissions 分页查某个代理的佣金明细。
@@ -286,10 +270,10 @@ index 7ffa537..baf4e6b 100644
  		delta := actualQuota - preConsumed
 diff --git a/setting/operation_setting/affiliate_setting.go b/setting/operation_setting/affiliate_setting.go
 new file mode 100644
-index 0000000..4084c4f
+index 0000000..01f3749
 --- /dev/null
 +++ b/setting/operation_setting/affiliate_setting.go
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,58 @@
 +package operation_setting
 +
 +import "github.com/QuantumNous/new-api/setting/config"
@@ -312,9 +296,6 @@ index 0000000..4084c4f
 +	TeamRate float64 `json:"team_rate"`
 +	MaxDepth int     `json:"max_depth"` // 向上遍历的硬上限,防成环与过深
 +
-+	// 核查期:期内佣金可转额度但不可提现
-+	HoldHours int `json:"hold_hours"`
-+
 +	// 模型毛利率。"default" 为兜底值,其余只列例外。设 0 即排除出返佣。
 +	MarginRates map[string]float64 `json:"margin_rates"`
 +}
@@ -327,7 +308,6 @@ index 0000000..4084c4f
 +	ValidDays:    365,
 +	TeamRate:     0.05,
 +	MaxDepth:     5,
-+	HoldHours:    7 * 24,
 +	MarginRates: map[string]float64{
 +		"default":       0.60, // 实测多数模型 60~67%,取下限保守
 +		"gpt-image2-4k": 0,    // 毛利仅 28%,返佣会吃穿利润,排除
