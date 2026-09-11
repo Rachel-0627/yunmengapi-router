@@ -40,7 +40,7 @@ export async function generate(req, res, auth, body) {
   let taskId
   try {
     const r = await fetchT(`${CFG.upstream}/v1/images/generations/async`,
-      { method: 'POST', headers: H, body: JSON.stringify(p) }, CFG.submitMs)
+      { method: 'POST', headers: H, body: JSON.stringify(p) }, CFG.reqMs)
     const txt = await r.text()
     let j; try { j = JSON.parse(txt) } catch { j = {} }
     // 上游对这条路径返回 200,但 202 也当成功(两条路径都给 task_id)
@@ -63,7 +63,7 @@ export async function generate(req, res, auth, body) {
     let n
     try {
       const r = await fetchT(`${CFG.upstream}/v1/images/tasks/${encodeURIComponent(taskId)}`,
-        { headers: { Authorization: auth } }, CFG.submitMs)
+        { headers: { Authorization: auth } }, CFG.reqMs)
       if (!r.ok) {
         // 单次查询失败不立刻放弃,连续 5 次才判定失败(上游偶发抖动)
         if (++softErrors >= 5) return fail(res, 502, `任务查询持续失败 (${r.status})`, 'poll_failed')

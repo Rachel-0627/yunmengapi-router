@@ -22,10 +22,14 @@ export function ok(res, obj) {
   res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(obj))
 }
 
-/** 带超时的 fetch,避免上游卡死时连接一直挂着 */
+/** 带超时的 fetch,避免上游卡死时连接一直挂着。
+ *
+ * ms 传错(undefined / NaN)时 setTimeout 会当成 0,请求刚发出就被掐断,
+ * 表现成"秒级超时"且很难看出是配置笔误 —— 这里兜底成默认值。 */
 export async function fetchT(url, opt, ms) {
+  const timeout = Number(ms) > 0 ? Number(ms) : CFG.reqMs
   const ac = new AbortController()
-  const t = setTimeout(() => ac.abort(), ms)
+  const t = setTimeout(() => ac.abort(), timeout)
   try { return await fetch(url, { ...opt, signal: ac.signal }) }
   finally { clearTimeout(t) }
 }
