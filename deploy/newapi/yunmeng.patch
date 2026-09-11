@@ -1194,27 +1194,46 @@ index adf8b5c..fd75c8c 100644
    )
  }
 diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-index e1824d3..9501329 100644
+index e1824d3..29b10a5 100644
 --- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
 +++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-@@ -81,11 +81,12 @@ export function AffiliateRewardsCard({
+@@ -48,7 +48,7 @@ export function AffiliateRewardsCard({
+   if (loading) {
+     return (
+       <Card data-card-hover='false' className='bg-muted/20 py-0'>
+-        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
++        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(180px,0.8fr)_minmax(300px,1.1fr)_minmax(260px,0.9fr)] lg:items-center'>
+           <div>
+             <Skeleton className='h-5 w-32' />
+             <Skeleton className='mt-2 h-4 w-48' />
+@@ -64,7 +64,7 @@ export function AffiliateRewardsCard({
+ 
+   return (
+     <Card data-card-hover='false' className='bg-muted/20 py-0'>
+-      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
++      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(180px,0.8fr)_minmax(300px,1.1fr)_minmax(260px,0.9fr)] lg:items-center'>
+         <div className='flex min-w-0 items-center gap-2.5'>
+           <IconBadge tone='chart-3'>
+             <Share2 />
+@@ -81,11 +81,13 @@ export function AffiliateRewardsCard({
            </div>
          </div>
  
 -        <div className='grid grid-cols-3 gap-1.5 text-center'>
-+        <div className='grid grid-cols-4 gap-1.5 text-center'>
++        <div className='grid grid-cols-3 gap-1.5 text-center sm:grid-cols-5'>
            {[
 -            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
 -            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
 -            [t('Invites'), String(user?.aff_count ?? 0)],
 +            [t('Invited Users'), String(user?.aff_count ?? 0)],
 +            [t('Total Commission'), formatQuota(user?.aff_history_quota ?? 0)],
++            [t('Transferred to Credit'), formatQuota(user?.aff_transferred ?? 0)],
 +            [t('Withdrawn'), formatQuota(user?.aff_withdrawn ?? 0)],
 +            [t('Withdrawable'), formatQuota(user?.aff_quota ?? 0)],
            ].map(([label, value]) => (
              <div key={label}>
                <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-@@ -112,16 +113,14 @@ export function AffiliateRewardsCard({
+@@ -112,16 +114,14 @@ export function AffiliateRewardsCard({
              tooltip={t('Copy referral link')}
              aria-label={t('Copy referral link')}
            />
@@ -1279,10 +1298,10 @@ index 5da08f0..72876fb 100644
    group: string
  }
 diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
-index 86095b2..c464176 100644
+index 86095b2..06c41a0 100644
 --- a/web/src/i18n/locales/en.json
 +++ b/web/src/i18n/locales/en.json
-@@ -5316,6 +5316,38 @@
+@@ -5316,6 +5316,39 @@
      "Zero retention": "Zero retention",
      "Zhipu": "Zhipu",
      "Zhipu V4": "Zhipu V4",
@@ -1319,11 +1338,12 @@ index 86095b2..c464176 100644
 +    "Safety cap against cycles. Commission decays to zero on its own.": "Safety cap against cycles. Commission decays to zero on its own.",
 +    "Gross margin by model": "Gross margin by model",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.",
-+    "Must be a valid JSON object": "Must be a valid JSON object"
++    "Must be a valid JSON object": "Must be a valid JSON object",
++    "Transferred to Credit": "Transferred to Credit"
    }
  }
 diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
-index 25250e2..921ffd2 100644
+index 25250e2..d996e0a 100644
 --- a/web/src/i18n/locales/zh-TW.json
 +++ b/web/src/i18n/locales/zh-TW.json
 @@ -2137,7 +2137,7 @@
@@ -1335,7 +1355,7 @@ index 25250e2..921ffd2 100644
      "Get started": "開始使用",
      "Get Started": "開始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,38 @@
+@@ -5316,6 +5316,39 @@
      "Zero retention": "零數據保留",
      "Zhipu": "智譜",
      "Zhipu V4": "智譜 V4",
@@ -1345,7 +1365,7 @@ index 25250e2..921ffd2 100644
 +    "Total Commission": "佣金總收入",
 +    "Withdrawn": "已提現",
 +    "Withdrawable": "待提現",
-+    "Withdraw to Credit": "提現轉額度",
++    "Withdraw to Credit": "提現轉token額度",
 +    "Per Second": "按秒計費",
 +    "Record Commission Withdrawal": "登記佣金提現",
 +    "Agent": "代理",
@@ -1372,11 +1392,12 @@ index 25250e2..921ffd2 100644
 +    "Safety cap against cycles. Commission decays to zero on its own.": "防成环的兜底上限。佣金本身会自然衰减到零。",
 +    "Gross margin by model": "各模型毛利率",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
-+    "Must be a valid JSON object": "必須是合法的 JSON 物件"
++    "Must be a valid JSON object": "必須是合法的 JSON 物件",
++    "Transferred to Credit": "已轉額度"
    }
  }
 diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
-index 457b1c5..1925c7a 100644
+index 457b1c5..33bd479 100644
 --- a/web/src/i18n/locales/zh.json
 +++ b/web/src/i18n/locales/zh.json
 @@ -2137,7 +2137,7 @@
@@ -1388,7 +1409,7 @@ index 457b1c5..1925c7a 100644
      "Get started": "开始使用",
      "Get Started": "开始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,38 @@
+@@ -5316,6 +5316,39 @@
      "Zero retention": "零数据保留",
      "Zhipu": "智谱",
      "Zhipu V4": "智谱 V4",
@@ -1398,7 +1419,7 @@ index 457b1c5..1925c7a 100644
 +    "Total Commission": "佣金总收入",
 +    "Withdrawn": "已提现",
 +    "Withdrawable": "待提现",
-+    "Withdraw to Credit": "提现转额度",
++    "Withdraw to Credit": "提现转token额度",
 +    "Per Second": "按秒计费",
 +    "Record Commission Withdrawal": "登记佣金提现",
 +    "Agent": "代理",
@@ -1425,6 +1446,7 @@ index 457b1c5..1925c7a 100644
 +    "Safety cap against cycles. Commission decays to zero on its own.": "防成环的兜底上限。佣金本身会自然衰减到零。",
 +    "Gross margin by model": "各模型毛利率",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
-+    "Must be a valid JSON object": "必须是合法的 JSON 对象"
++    "Must be a valid JSON object": "必须是合法的 JSON 对象",
++    "Transferred to Credit": "已转额度"
    }
  }
