@@ -23,6 +23,108 @@ index e69de29..6f4b48f 100644
 +++ b/VERSION
 @@ -0,0 +1 @@
 +v1.0.0-rc.25-persecond
+diff --git a/controller/affiliate.go b/controller/affiliate.go
+new file mode 100644
+index 0000000..4c1c44f
+--- /dev/null
++++ b/controller/affiliate.go
+@@ -0,0 +1,71 @@
++package controller
++
++import (
++	"strconv"
++
++	"github.com/QuantumNous/new-api/common"
++	"github.com/QuantumNous/new-api/model"
++
++	"github.com/gin-gonic/gin"
++)
++
++type AffiliateWithdrawRequest struct {
++	UserId int    `json:"user_id"`
++	Amount int    `json:"amount"` // 额度单位,与 aff_quota 一致
++	Note   string `json:"note"`
++}
++
++// AdminWithdrawAffiliate 登记一笔佣金提现(仅管理员)。
++//
++// 系统只记账,不打款 —— 转账由主理人在微信上人工完成。
++// 备注必填:三个月后要能靠它对上是哪一笔微信转账。
++func AdminWithdrawAffiliate(c *gin.Context) {
++	var req AffiliateWithdrawRequest
++	if err := c.ShouldBindJSON(&req); err != nil {
++		common.ApiErrorMsg(c, "参数错误")
++		return
++	}
++	if req.UserId <= 0 {
++		common.ApiErrorMsg(c, "请选择代理")
++		return
++	}
++	if req.Amount <= 0 {
++		common.ApiErrorMsg(c, "提现金额必须大于 0")
++		return
++	}
++	if req.Note == "" {
++		common.ApiErrorMsg(c, "请填写备注")
++		return
++	}
++
++	operatorId := c.GetInt("id")
++	if err := model.RecordAffiliateWithdrawal(req.UserId, req.Amount, operatorId, req.Note); err != nil {
++		common.ApiError(c, err)
++		return
++	}
++	common.ApiSuccess(c, nil)
++}
++
++// GetAffiliateWithdrawals 查某代理的提现流水(仅管理员)。
++func GetAffiliateWithdrawals(c *gin.Context) {
++	userId, err := strconv.Atoi(c.Param("id"))
++	if err != nil || userId <= 0 {
++		common.ApiErrorMsg(c, "用户 ID 无效")
++		return
++	}
++	page, _ := strconv.Atoi(c.Query("page"))
++	if page < 1 {
++		page = 1
++	}
++	size, _ := strconv.Atoi(c.Query("size"))
++	if size < 1 || size > 100 {
++		size = 20
++	}
++
++	rows, total, err := model.GetUserAffiliateWithdrawals(userId, (page-1)*size, size)
++	if err != nil {
++		common.ApiError(c, err)
++		return
++	}
++	common.ApiSuccess(c, gin.H{"items": rows, "total": total})
++}
+diff --git a/controller/user.go b/controller/user.go
+index 9b8d931..988160e 100644
+--- a/controller/user.go
++++ b/controller/user.go
+@@ -507,6 +507,12 @@ func GetSelf(c *gin.Context) {
+ // administrator-only remarks.
+ func buildSelfUserData(user *model.User) map[string]interface{} {
+ 	userSetting := user.GetSetting()
++	// 「已提现」只能来自提现流水。用 aff_history-aff_quota 算是错的 ——
++	// 那个差值还混着代理自助转成消费额度的部分。
++	affWithdrawn, err := model.SumAffiliateWithdrawn(user.Id)
++	if err != nil {
++		affWithdrawn = 0
++	}
+ 	permissions := calculateUserPermissions(user.Role)
+ 	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
+ 	return map[string]interface{}{
+@@ -528,6 +534,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
+ 		"aff_code":          user.AffCode,
+ 		"aff_count":         user.AffCount,
+ 		"aff_quota":         user.AffQuota,
++		"aff_withdrawn":     affWithdrawn,
+ 		"aff_history_quota": user.AffHistoryQuota,
+ 		"inviter_id":        user.InviterId,
+ 		"linux_do_id":       user.LinuxDOId,
 diff --git a/model/affiliate.go b/model/affiliate.go
 new file mode 100644
 index 0000000..30a3831
@@ -101,18 +203,131 @@ index 0000000..30a3831
 +		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
 +	return sum, err
 +}
+diff --git a/model/affiliate_withdrawal.go b/model/affiliate_withdrawal.go
+new file mode 100644
+index 0000000..0435a71
+--- /dev/null
++++ b/model/affiliate_withdrawal.go
+@@ -0,0 +1,93 @@
++package model
++
++import (
++	"errors"
++	"fmt"
++
++	"github.com/QuantumNous/new-api/common"
++	"github.com/QuantumNous/new-api/logger"
++)
++
++// AffiliateWithdrawal 佣金提现登记。
++//
++// 提现本身是人工办理(代理加微信、主理人转账),系统只负责记账:
++// 扣减 aff_quota 并留下一条可追溯的流水。
++//
++// 不与 AffiliateCommission 合表 —— 那张表每行表示"赚了多少",
++// 这张表示"取走多少",语义不同,混在一起对账会绕。
++type AffiliateWithdrawal struct {
++	Id         int    `json:"id"`
++	UserId     int    `json:"user_id" gorm:"index"`
++	Amount     int    `json:"amount"`
++	OperatorId int    `json:"operator_id"`                    // 经办管理员
++	Note       string `json:"note" gorm:"type:varchar(255)"`  // 必填,记微信转账单号等
++	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime;index"`
++}
++
++// RecordAffiliateWithdrawal 登记一笔提现。
++//
++// 整个过程在一个事务里,并对用户行加锁 —— 否则并发登记两笔会双花:
++// 两个请求都读到同样的余额,各自判断"够",然后各扣各的。
++func RecordAffiliateWithdrawal(userId, amount, operatorId int, note string) error {
++	if amount <= 0 {
++		return errors.New("提现金额必须大于 0")
++	}
++	if note == "" {
++		return errors.New("请填写备注")
++	}
++
++	tx := DB.Begin()
++	if tx.Error != nil {
++		return tx.Error
++	}
++	defer tx.Rollback()
++
++	var user User
++	if err := lockForUpdate(tx).First(&user, userId).Error; err != nil {
++		return err
++	}
++	if user.AffQuota < amount {
++		return fmt.Errorf("佣金余额不足,当前可提 %s", logger.LogQuota(user.AffQuota))
++	}
++
++	user.AffQuota -= amount
++	if err := tx.Save(&user).Error; err != nil {
++		return err
++	}
++	if err := tx.Create(&AffiliateWithdrawal{
++		UserId:     userId,
++		Amount:     amount,
++		OperatorId: operatorId,
++		Note:       note,
++	}).Error; err != nil {
++		return err
++	}
++	if err := tx.Commit().Error; err != nil {
++		return err
++	}
++
++	common.SysLog(fmt.Sprintf("佣金提现登记 user_id=%d amount=%d operator_id=%d note=%q",
++		userId, amount, operatorId, note))
++	RecordLog(userId, LogTypeSystem, fmt.Sprintf("佣金提现 %s(经办人 %d)",
++		logger.LogQuota(amount), operatorId))
++	return nil
++}
++
++// SumAffiliateWithdrawn 某代理累计已提现金额,供前端「已提现」展示。
++func SumAffiliateWithdrawn(userId int) (int, error) {
++	var sum int
++	err := DB.Model(&AffiliateWithdrawal{}).
++		Where("user_id = ?", userId).
++		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
++	return sum, err
++}
++
++// GetUserAffiliateWithdrawals 分页查提现流水。
++func GetUserAffiliateWithdrawals(userId, offset, limit int) (rows []AffiliateWithdrawal, total int64, err error) {
++	q := DB.Model(&AffiliateWithdrawal{}).Where("user_id = ?", userId)
++	if err = q.Count(&total).Error; err != nil {
++		return
++	}
++	err = q.Order("id desc").Offset(offset).Limit(limit).Find(&rows).Error
++	return
++}
 diff --git a/model/main.go b/model/main.go
-index 2144559..a3c49bc 100644
+index 2144559..865b8cb 100644
 --- a/model/main.go
 +++ b/model/main.go
-@@ -281,6 +281,7 @@ func migrateDB() error {
+@@ -281,6 +281,8 @@ func migrateDB() error {
  		&TwoFA{},
  		&TwoFABackupCode{},
  		&Checkin{},
 +		&AffiliateCommission{},
++		&AffiliateWithdrawal{},
  		&SubscriptionOrder{},
  		&UserSubscription{},
  		&SubscriptionPreConsumeRecord{},
+diff --git a/router/api-router.go b/router/api-router.go
+index 31c595e..a32fb3c 100644
+--- a/router/api-router.go
++++ b/router/api-router.go
+@@ -135,6 +135,8 @@ func SetApiRouter(router *gin.Engine) {
+ 				adminRoute.GET("/", controller.GetAllUsers)
+ 				adminRoute.GET("/topup", controller.GetAllTopUps)
+ 				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
++				adminRoute.POST("/affiliate/withdraw", controller.AdminWithdrawAffiliate)
++				adminRoute.GET("/:id/affiliate/withdrawals", controller.GetAffiliateWithdrawals)
+ 				adminRoute.GET("/search", controller.SearchUsers)
+ 				adminRoute.GET("/:id/oauth/bindings", controller.GetUserOAuthBindingsByAdmin)
+ 				adminRoute.DELETE("/:id/oauth/bindings/:provider_id", controller.UnbindCustomOAuthByAdmin)
 diff --git a/service/affiliate.go b/service/affiliate.go
 new file mode 100644
 index 0000000..a6180d1
@@ -347,11 +562,218 @@ index 86f6972..d38f080 100644
    }
  
    return (
+diff --git a/web/src/features/users/api.ts b/web/src/features/users/api.ts
+index 1d1d16a..b0fc1ae 100644
+--- a/web/src/features/users/api.ts
++++ b/web/src/features/users/api.ts
+@@ -212,3 +212,13 @@ export async function adminUnbindCustomOAuth(
+   )
+   return res.data
+ }
++
++/** 登记一笔佣金提现。系统只记账,转账由主理人在微信上人工完成。 */
++export async function withdrawAffiliate(payload: {
++  user_id: number
++  amount: number
++  note: string
++}): Promise<ApiResponse<null>> {
++  const res = await api.post('/api/user/affiliate/withdraw', payload)
++  return res.data
++}
+diff --git a/web/src/features/users/components/affiliate-withdraw-dialog.tsx b/web/src/features/users/components/affiliate-withdraw-dialog.tsx
+new file mode 100644
+index 0000000..7ed0197
+--- /dev/null
++++ b/web/src/features/users/components/affiliate-withdraw-dialog.tsx
+@@ -0,0 +1,125 @@
++import { useState } from 'react'
++import { useTranslation } from 'react-i18next'
++import { toast } from 'sonner'
++
++import { Dialog } from '@/components/dialog'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import { Label } from '@/components/ui/label'
++import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
++
++import { withdrawAffiliate } from '../api'
++
++interface AffiliateWithdrawDialogProps {
++  open: boolean
++  onOpenChange: (open: boolean) => void
++  userId: number
++  username: string
++  affQuota: number
++  onSuccess: () => void
++}
++
++/**
++ * 登记佣金提现。系统只扣减余额并留流水,打款是主理人在微信上人工完成的。
++ * 备注必填 —— 三个月后要能靠它对上是哪一笔转账。
++ */
++export function AffiliateWithdrawDialog(props: AffiliateWithdrawDialogProps) {
++  const { t } = useTranslation()
++  const [amount, setAmount] = useState('')
++  const [note, setNote] = useState('')
++  const [loading, setLoading] = useState(false)
++
++  const quotaValue = parseQuotaFromDollars(parseFloat(amount) || 0)
++  const overBalance = quotaValue > props.affQuota
++  const canSubmit =
++    quotaValue > 0 && !overBalance && note.trim().length > 0 && !loading
++
++  const handleSubmit = async () => {
++    if (!canSubmit) return
++    setLoading(true)
++    try {
++      const res = await withdrawAffiliate({
++        user_id: props.userId,
++        amount: quotaValue,
++        note: note.trim(),
++      })
++      if (res.success) {
++        toast.success(t('Withdrawal recorded'))
++        setAmount('')
++        setNote('')
++        props.onSuccess()
++        props.onOpenChange(false)
++      } else {
++        toast.error(res.message || t('Failed to record withdrawal'))
++      }
++    } finally {
++      setLoading(false)
++    }
++  }
++
++  return (
++    <Dialog
++      open={props.open}
++      onOpenChange={props.onOpenChange}
++      title={t('Record Commission Withdrawal')}
++      contentClassName='sm:max-w-md'
++    >
++      <div className='space-y-4'>
++        <div className='bg-muted/40 rounded-lg p-3 text-sm'>
++          <div className='flex justify-between'>
++            <span className='text-muted-foreground'>{t('Agent')}</span>
++            <span className='font-medium'>
++              {props.username} (#{props.userId})
++            </span>
++          </div>
++          <div className='mt-1.5 flex justify-between'>
++            <span className='text-muted-foreground'>{t('Withdrawable')}</span>
++            <span className='font-semibold tabular-nums'>
++              {formatQuota(props.affQuota)}
++            </span>
++          </div>
++        </div>
++
++        <div className='space-y-1.5'>
++          <Label htmlFor='aff-amount'>{t('Withdrawal amount')}</Label>
++          <Input
++            id='aff-amount'
++            type='number'
++            value={amount}
++            onChange={(e) => setAmount(e.target.value)}
++            placeholder='0.00'
++          />
++          {overBalance && (
++            <p className='text-destructive text-xs'>
++              {t('Amount exceeds the available commission balance.')}
++            </p>
++          )}
++        </div>
++
++        <div className='space-y-1.5'>
++          <Label htmlFor='aff-note'>
++            {t('Note')} <span className='text-destructive'>*</span>
++          </Label>
++          <Input
++            id='aff-note'
++            value={note}
++            onChange={(e) => setNote(e.target.value)}
++            placeholder={t('e.g. WeChat transfer ref, date')}
++          />
++          <p className='text-muted-foreground text-xs'>
++            {t('Required. Used to match this record against the actual transfer.')}
++          </p>
++        </div>
++
++        <div className='flex justify-end gap-2'>
++          <Button variant='outline' onClick={() => props.onOpenChange(false)}>
++            {t('Cancel')}
++          </Button>
++          <Button onClick={handleSubmit} disabled={!canSubmit}>
++            {t('Confirm')}
++          </Button>
++        </div>
++      </div>
++    </Dialog>
++  )
++}
+diff --git a/web/src/features/users/components/data-table-row-actions.tsx b/web/src/features/users/components/data-table-row-actions.tsx
+index adf8b5c..fd75c8c 100644
+--- a/web/src/features/users/components/data-table-row-actions.tsx
++++ b/web/src/features/users/components/data-table-row-actions.tsx
+@@ -28,6 +28,7 @@ import {
+   ShieldAlert,
+   Link2,
+   CreditCard,
++  Wallet,
+ } from 'lucide-react'
+ import { useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+@@ -57,6 +58,7 @@ import {
+ } from '../constants'
+ import { getUserActionMessage } from '../lib'
+ import type { User, ManageUserAction } from '../types'
++import { AffiliateWithdrawDialog } from './affiliate-withdraw-dialog'
+ import { UserBindingDialog } from './dialogs/user-binding-dialog'
+ import { useUsers } from './users-provider'
+ 
+@@ -72,6 +74,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
+   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
+   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
++  const [affWithdrawOpen, setAffWithdrawOpen] = useState(false)
+ 
+   const handleEdit = () => {
+     setCurrentRow(user)
+@@ -180,6 +183,13 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+           </DropdownMenuItem>
+         )}
+ 
++        <DropdownMenuItem onClick={() => setAffWithdrawOpen(true)}>
++          {t('Record Commission Withdrawal')}
++          <DropdownMenuShortcut>
++            <Wallet size={16} />
++          </DropdownMenuShortcut>
++        </DropdownMenuItem>
++
+         {isAdmin && !isRoot && (
+           <DropdownMenuItem onClick={() => handleManage('demote')}>
+             {t('Demote')}
+@@ -301,6 +311,15 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
+         user={{ id: user.id, username: user.username }}
+         onSuccess={triggerRefresh}
+       />
++
++      <AffiliateWithdrawDialog
++        open={affWithdrawOpen}
++        onOpenChange={setAffWithdrawOpen}
++        userId={user.id}
++        username={user.username}
++        affQuota={user.aff_quota ?? 0}
++        onSuccess={triggerRefresh}
++      />
+     </div>
+   )
+ }
 diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-index e1824d3..8605a25 100644
+index e1824d3..9501329 100644
 --- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
 +++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-@@ -81,11 +81,21 @@ export function AffiliateRewardsCard({
+@@ -81,11 +81,12 @@ export function AffiliateRewardsCard({
            </div>
          </div>
  
@@ -363,21 +785,12 @@ index e1824d3..8605a25 100644
 -            [t('Invites'), String(user?.aff_count ?? 0)],
 +            [t('Invited Users'), String(user?.aff_count ?? 0)],
 +            [t('Total Commission'), formatQuota(user?.aff_history_quota ?? 0)],
-+            // 已提现 = 累计佣金 - 当前余额,不需要额外字段
-+            [
-+              t('Withdrawn'),
-+              formatQuota(
-+                Math.max(
-+                  0,
-+                  (user?.aff_history_quota ?? 0) - (user?.aff_quota ?? 0)
-+                )
-+              ),
-+            ],
++            [t('Withdrawn'), formatQuota(user?.aff_withdrawn ?? 0)],
 +            [t('Withdrawable'), formatQuota(user?.aff_quota ?? 0)],
            ].map(([label, value]) => (
              <div key={label}>
                <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-@@ -112,16 +122,14 @@ export function AffiliateRewardsCard({
+@@ -112,16 +113,14 @@ export function AffiliateRewardsCard({
              tooltip={t('Copy referral link')}
              aria-label={t('Copy referral link')}
            />
@@ -426,11 +839,24 @@ index 95f3663..15f1359 100644
                </a>
              </p>
            )}
+diff --git a/web/src/features/wallet/types.ts b/web/src/features/wallet/types.ts
+index 5da08f0..fdcbcac 100644
+--- a/web/src/features/wallet/types.ts
++++ b/web/src/features/wallet/types.ts
+@@ -240,6 +240,8 @@ export interface UserWalletData {
+   aff_history_quota: number
+   /** Number of successful affiliate invites */
+   aff_count: number
++  /** 累计已提现为现金的佣金,来自提现流水;不含自助转成额度的部分 */
++  aff_withdrawn?: number
+   /** User group */
+   group: string
+ }
 diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
-index 86095b2..adb9a00 100644
+index 86095b2..5782cc0 100644
 --- a/web/src/i18n/locales/en.json
 +++ b/web/src/i18n/locales/en.json
-@@ -5316,6 +5316,12 @@
+@@ -5316,6 +5316,20 @@
      "Zero retention": "Zero retention",
      "Zhipu": "Zhipu",
      "Zhipu V4": "Zhipu V4",
@@ -441,11 +867,19 @@ index 86095b2..adb9a00 100644
 +    "Withdrawn": "Withdrawn",
 +    "Withdrawable": "Withdrawable",
 +    "Withdraw to Credit": "Withdraw to Credit",
-+    "Per Second": "Per Second"
++    "Per Second": "Per Second",
++    "Record Commission Withdrawal": "Record Commission Withdrawal",
++    "Agent": "Agent",
++    "Withdrawal amount": "Withdrawal amount",
++    "Amount exceeds the available commission balance.": "Amount exceeds the available commission balance.",
++    "e.g. WeChat transfer ref, date": "e.g. WeChat transfer ref, date",
++    "Required. Used to match this record against the actual transfer.": "Required. Used to match this record against the actual transfer.",
++    "Withdrawal recorded": "Withdrawal recorded",
++    "Failed to record withdrawal": "Failed to record withdrawal"
    }
  }
 diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
-index 25250e2..c17ed34 100644
+index 25250e2..34d18b1 100644
 --- a/web/src/i18n/locales/zh-TW.json
 +++ b/web/src/i18n/locales/zh-TW.json
 @@ -2137,7 +2137,7 @@
@@ -457,7 +891,7 @@ index 25250e2..c17ed34 100644
      "Get started": "開始使用",
      "Get Started": "開始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,12 @@
+@@ -5316,6 +5316,20 @@
      "Zero retention": "零數據保留",
      "Zhipu": "智譜",
      "Zhipu V4": "智譜 V4",
@@ -468,11 +902,19 @@ index 25250e2..c17ed34 100644
 +    "Withdrawn": "已提現",
 +    "Withdrawable": "待提現",
 +    "Withdraw to Credit": "提現轉額度",
-+    "Per Second": "按秒計費"
++    "Per Second": "按秒計費",
++    "Record Commission Withdrawal": "登記佣金提現",
++    "Agent": "代理",
++    "Withdrawal amount": "提現金額",
++    "Amount exceeds the available commission balance.": "金額超過可提現的佣金餘額。",
++    "e.g. WeChat transfer ref, date": "例:微信轉帳單號、日期",
++    "Required. Used to match this record against the actual transfer.": "必填。用於日後與實際轉帳對帳。",
++    "Withdrawal recorded": "提現已登記",
++    "Failed to record withdrawal": "登記提現失敗"
    }
  }
 diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
-index 457b1c5..4af067d 100644
+index 457b1c5..94cd562 100644
 --- a/web/src/i18n/locales/zh.json
 +++ b/web/src/i18n/locales/zh.json
 @@ -2137,7 +2137,7 @@
@@ -484,7 +926,7 @@ index 457b1c5..4af067d 100644
      "Get started": "开始使用",
      "Get Started": "开始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,12 @@
+@@ -5316,6 +5316,20 @@
      "Zero retention": "零数据保留",
      "Zhipu": "智谱",
      "Zhipu V4": "智谱 V4",
@@ -495,6 +937,14 @@ index 457b1c5..4af067d 100644
 +    "Withdrawn": "已提现",
 +    "Withdrawable": "待提现",
 +    "Withdraw to Credit": "提现转额度",
-+    "Per Second": "按秒计费"
++    "Per Second": "按秒计费",
++    "Record Commission Withdrawal": "登记佣金提现",
++    "Agent": "代理",
++    "Withdrawal amount": "提现金额",
++    "Amount exceeds the available commission balance.": "金额超过可提现的佣金余额。",
++    "e.g. WeChat transfer ref, date": "例:微信转账单号、日期",
++    "Required. Used to match this record against the actual transfer.": "必填。用于日后与实际转账对账。",
++    "Withdrawal recorded": "提现已登记",
++    "Failed to record withdrawal": "登记提现失败"
    }
  }
