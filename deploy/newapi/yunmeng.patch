@@ -23,6 +23,316 @@ index e69de29..6f4b48f 100644
 +++ b/VERSION
 @@ -0,0 +1 @@
 +v1.0.0-rc.25-persecond
+diff --git a/model/affiliate.go b/model/affiliate.go
+new file mode 100644
+index 0000000..091dbd7
+--- /dev/null
++++ b/model/affiliate.go
+@@ -0,0 +1,88 @@
++package model
++
++import (
++	"time"
++
++	"gorm.io/gorm"
++)
++
++// AffiliateCommission 代理佣金流水。
++//
++// 为什么必须有这张表:核查期判定、提现审核、代理查明细,三件事都要按笔追溯,
++// 只靠 users.aff_quota 一个汇总数字做不到。
++type AffiliateCommission struct {
++	Id         int    `json:"id"`
++	UserId     int    `json:"user_id" gorm:"index:idx_aff_user_status,priority:1"`     // 收佣金的代理
++	FromUserId int    `json:"from_user_id" gorm:"index"`                               // 产生消费的用户
++	ModelName  string `json:"model_name" gorm:"type:varchar(128)"`
++	Level      int    `json:"level"`                                                   // 1=直属,2+=团队奖励
++	Profit     int    `json:"profit"`                                                  // 本次消费的利润(计佣基数)
++	Amount     int    `json:"amount"`                                                  // 佣金额度
++	Status     string `json:"status" gorm:"type:varchar(20);index:idx_aff_user_status,priority:2"`
++	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime;index"`
++}
++
++const (
++	AffCommissionActive    = "active"    // 正常。是否可提现按 created_at 与核查期实时判断
++	AffCommissionRevoked   = "revoked"   // 经核查确认异常,已冲销
++	AffCommissionWithdrawn = "withdrawn" // 已人工提现
++)
++
++// RecordAffiliateCommissions 在一个事务里写入多笔佣金并累加到各自的 aff_quota。
++// 任一笔失败则整体回滚,避免流水与余额对不上。
++func RecordAffiliateCommissions(rows []AffiliateCommission) error {
++	if len(rows) == 0 {
++		return nil
++	}
++	return DB.Transaction(func(tx *gorm.DB) error {
++		if err := tx.Create(&rows).Error; err != nil {
++			return err
++		}
++		for _, r := range rows {
++			if r.Amount <= 0 {
++				continue
++			}
++			err := tx.Model(&User{}).Where("id = ?", r.UserId).Updates(map[string]interface{}{
++				"aff_quota":   gorm.Expr("aff_quota + ?", r.Amount),
++				"aff_history": gorm.Expr("aff_history + ?", r.Amount),
++			}).Error
++			if err != nil {
++				return err
++			}
++		}
++		return nil
++	})
++}
++
++// SumWithdrawableCommission 汇总可提现佣金。
++//
++// 不用定时任务把 pending 刷成 available —— 核查期是否已过,查询时按
++// created_at 现算即可,少一套 cron 就少一处会出错的地方。
++func SumWithdrawableCommission(userId, holdHours int) (int, error) {
++	cutoff := time.Now().Add(-time.Duration(holdHours) * time.Hour).Unix()
++	var sum int
++	err := DB.Model(&AffiliateCommission{}).
++		Where("user_id = ? AND status = ? AND created_at <= ?",
++			userId, AffCommissionActive, cutoff).
++		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
++	return sum, err
++}
++
++// GetUserAffiliateCommissions 分页查某个代理的佣金明细。
++func GetUserAffiliateCommissions(userId, offset, limit int) (rows []AffiliateCommission, total int64, err error) {
++	q := DB.Model(&AffiliateCommission{}).Where("user_id = ?", userId)
++	if err = q.Count(&total).Error; err != nil {
++		return
++	}
++	err = q.Order("id desc").Offset(offset).Limit(limit).Find(&rows).Error
++	return
++}
++
++// SumAffiliateCommissionByStatus 汇总某状态下的佣金总额,供前端展示"可提现"金额。
++func SumAffiliateCommissionByStatus(userId int, status string) (int, error) {
++	var sum int
++	err := DB.Model(&AffiliateCommission{}).
++		Where("user_id = ? AND status = ?", userId, status).
++		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
++	return sum, err
++}
+diff --git a/model/main.go b/model/main.go
+index 2144559..a3c49bc 100644
+--- a/model/main.go
++++ b/model/main.go
+@@ -281,6 +281,7 @@ func migrateDB() error {
+ 		&TwoFA{},
+ 		&TwoFABackupCode{},
+ 		&Checkin{},
++		&AffiliateCommission{},
+ 		&SubscriptionOrder{},
+ 		&UserSubscription{},
+ 		&SubscriptionPreConsumeRecord{},
+diff --git a/service/affiliate.go b/service/affiliate.go
+new file mode 100644
+index 0000000..a6180d1
+--- /dev/null
++++ b/service/affiliate.go
+@@ -0,0 +1,107 @@
++package service
++
++import (
++	"fmt"
++	"time"
++
++	"github.com/QuantumNous/new-api/common"
++	"github.com/QuantumNous/new-api/logger"
++	"github.com/QuantumNous/new-api/model"
++	"github.com/QuantumNous/new-api/setting/operation_setting"
++)
++
++// DispatchAffiliateCommission 在消费结算后派发代理佣金。
++//
++// 分两段:
++//  1. 直属代理按被推荐人的绑定时长拿利润的一个比例(50% / 15% / 0)
++//  2. 沿 inviter_id 继续向上,每级取下一级佣金的 TeamRate,逐级衰减
++//
++// 额度是整数,衰减到 0 时自然终止,因此团队层级不需要靠深度硬截断;
++// MaxDepth 只作防成环兜底。
++//
++// 任何异常只记日志、不影响主链路 —— 佣金派发失败不该让用户的请求失败。
++func DispatchAffiliateCommission(consumerId int, modelName string, quota int) {
++	defer func() {
++		if r := recover(); r != nil {
++			common.SysLog(fmt.Sprintf("代理佣金派发 panic user_id=%d model=%s: %v", consumerId, modelName, r))
++		}
++	}()
++
++	s := operation_setting.GetAffiliateSetting()
++	if !s.Enabled || quota <= 0 || consumerId <= 0 {
++		return
++	}
++
++	consumer, err := model.GetUserById(consumerId, false)
++	if err != nil || consumer == nil || consumer.InviterId <= 0 {
++		return // 没有上级,平台全留
++	}
++
++	// ── 利润基数 ──
++	margin := s.MarginRateOf(modelName)
++	if margin <= 0 {
++		return // 该模型被排除(如低毛利的 4K 生图)
++	}
++	profit := int(float64(quota) * margin)
++	if profit <= 0 {
++		return
++	}
++
++	// ── 直属佣金:按绑定时长分档 ──
++	// 注册即绑定且不可更换,故 created_at 就是绑定时间。
++	boundFor := time.Since(time.Unix(consumer.CreatedAt, 0))
++	var rate float64
++	switch {
++	case boundFor <= time.Duration(s.NewUserHours)*time.Hour:
++		rate = s.NewUserRate
++	case boundFor <= time.Duration(s.ValidDays)*24*time.Hour:
++		rate = s.LongTermRate
++	default:
++		return // 超过有效期,不再产生佣金
++	}
++
++	amount := int(float64(profit) * rate)
++	if amount <= 0 {
++		return
++	}
++
++	// ── 沿上级链派发 ──
++	rows := make([]model.AffiliateCommission, 0, 4)
++	seen := map[int]bool{consumerId: true}
++	uplineId := consumer.InviterId
++
++	for level := 1; level <= s.MaxDepth && uplineId > 0 && amount > 0; level++ {
++		if seen[uplineId] {
++			common.SysLog(fmt.Sprintf("代理链成环,已截断 user_id=%d upline_id=%d", consumerId, uplineId))
++			break
++		}
++		seen[uplineId] = true
++
++		rows = append(rows, model.AffiliateCommission{
++			UserId:     uplineId,
++			FromUserId: consumerId,
++			ModelName:  modelName,
++			Level:      level,
++			Profit:     profit,
++			Amount:     amount,
++			Status:     model.AffCommissionActive,
++		})
++
++		upline, err := model.GetUserById(uplineId, false)
++		if err != nil || upline == nil || upline.InviterId <= 0 {
++			break
++		}
++		uplineId = upline.InviterId
++		amount = int(float64(amount) * s.TeamRate) // 逐级衰减,归零即停
++	}
++
++	if err := model.RecordAffiliateCommissions(rows); err != nil {
++		common.SysLog(fmt.Sprintf("代理佣金写入失败 user_id=%d: %s", consumerId, err.Error()))
++		return
++	}
++	for _, r := range rows {
++		model.RecordLog(r.UserId, model.LogTypeSystem, fmt.Sprintf(
++			"推广佣金 %s(来自用户 %d 的 %s 消费,第 %d 级)",
++			logger.LogQuota(r.Amount), r.FromUserId, r.ModelName, r.Level))
++	}
++}
+diff --git a/service/quota.go b/service/quota.go
+index 359956a..53ef67c 100644
+--- a/service/quota.go
++++ b/service/quota.go
+@@ -461,6 +461,18 @@ func postConsumeQuotaWithResult(relayInfo *relaycommon.RelayInfo, quota int, pre
+ 		}
+ 	}
+ 
++	// 代理佣金:只对钱包扣费且真实产生消费的请求派发。
++	// 订阅计费不走钱包,其收入已另行结算,不重复计佣;
++	// Playground 是站内试用,也不计。
++	// 异步执行 —— 佣金不该拖慢用户请求,失败也只记日志不影响主链路。
++	if quota > 0 && !relayInfo.IsPlayground &&
++		relayInfo.BillingSource != BillingSourceSubscription {
++		userId, modelName := relayInfo.UserId, relayInfo.OriginModelName
++		gopool.Go(func() {
++			DispatchAffiliateCommission(userId, modelName, quota)
++		})
++	}
++
+ 	return result, nil
+ }
+ 
+diff --git a/setting/operation_setting/affiliate_setting.go b/setting/operation_setting/affiliate_setting.go
+new file mode 100644
+index 0000000..4084c4f
+--- /dev/null
++++ b/setting/operation_setting/affiliate_setting.go
+@@ -0,0 +1,62 @@
++package operation_setting
++
++import "github.com/QuantumNous/new-api/setting/config"
++
++// AffiliateSetting 代理佣金配置。规则见 docs/代理佣金规则.md。
++//
++// 佣金基数是「利润」而非消费额 —— 按消费额计佣会让低毛利模型倒亏
++// (如 gpt-image2-4k 毛利仅 28%)。因 new-api 只知售价不知进货价,
++// 这里用一张毛利率表换算,只需列出偏离默认值的例外。
++type AffiliateSetting struct {
++	Enabled bool `json:"enabled"`
++
++	// 直属代理:按被推荐人的绑定时长分档
++	NewUserRate  float64 `json:"new_user_rate"`  // 绑定后 NewUserHours 小时内的比例
++	NewUserHours int     `json:"new_user_hours"` // 新用户奖励窗口
++	LongTermRate float64 `json:"long_term_rate"` // 窗口结束后至 ValidDays 的比例
++	ValidDays    int     `json:"valid_days"`     // 超过则不再产生直属佣金
++
++	// 团队奖励:每级取下一级佣金的 TeamRate,逐级衰减
++	TeamRate float64 `json:"team_rate"`
++	MaxDepth int     `json:"max_depth"` // 向上遍历的硬上限,防成环与过深
++
++	// 核查期:期内佣金可转额度但不可提现
++	HoldHours int `json:"hold_hours"`
++
++	// 模型毛利率。"default" 为兜底值,其余只列例外。设 0 即排除出返佣。
++	MarginRates map[string]float64 `json:"margin_rates"`
++}
++
++var affiliateSetting = AffiliateSetting{
++	Enabled:      false, // 默认关闭,配置齐备并对账后再打开
++	NewUserRate:  0.50,
++	NewUserHours: 7 * 24,
++	LongTermRate: 0.15,
++	ValidDays:    365,
++	TeamRate:     0.05,
++	MaxDepth:     5,
++	HoldHours:    7 * 24,
++	MarginRates: map[string]float64{
++		"default":       0.60, // 实测多数模型 60~67%,取下限保守
++		"gpt-image2-4k": 0,    // 毛利仅 28%,返佣会吃穿利润,排除
++	},
++}
++
++func init() {
++	config.GlobalConfig.Register("affiliate_setting", &affiliateSetting)
++}
++
++func GetAffiliateSetting() *AffiliateSetting {
++	return &affiliateSetting
++}
++
++// MarginRateOf 取某模型的毛利率,未单列的走 default。
++func (s *AffiliateSetting) MarginRateOf(modelName string) float64 {
++	if r, ok := s.MarginRates[modelName]; ok {
++		return r
++	}
++	if r, ok := s.MarginRates["default"]; ok {
++		return r
++	}
++	return 0
++}
 diff --git a/web/src/features/pricing/components/model-billing-mode-badge.tsx b/web/src/features/pricing/components/model-billing-mode-badge.tsx
 index 86f6972..d38f080 100644
 --- a/web/src/features/pricing/components/model-billing-mode-badge.tsx
