@@ -25,10 +25,10 @@ index e69de29..6f4b48f 100644
 +v1.0.0-rc.25-persecond
 diff --git a/controller/affiliate.go b/controller/affiliate.go
 new file mode 100644
-index 0000000..4c1c44f
+index 0000000..fbc6222
 --- /dev/null
 +++ b/controller/affiliate.go
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,79 @@
 +package controller
 +
 +import (
@@ -77,7 +77,8 @@ index 0000000..4c1c44f
 +	common.ApiSuccess(c, nil)
 +}
 +
-+// GetAffiliateWithdrawals 查某代理的提现流水(仅管理员)。
++// GetAffiliateWithdrawals 查某代理的佣金支出流水(仅管理员)。
++// 可用 ?type=cash|credit 过滤;同时返回两类的累计汇总。
 +func GetAffiliateWithdrawals(c *gin.Context) {
 +	userId, err := strconv.Atoi(c.Param("id"))
 +	if err != nil || userId <= 0 {
@@ -93,26 +94,37 @@ index 0000000..4c1c44f
 +		size = 20
 +	}
 +
-+	rows, total, err := model.GetUserAffiliateWithdrawals(userId, (page-1)*size, size)
++	rows, total, err := model.GetUserAffiliateWithdrawals(userId, (page-1)*size, size, c.Query("type"))
 +	if err != nil {
 +		common.ApiError(c, err)
 +		return
 +	}
-+	common.ApiSuccess(c, gin.H{"items": rows, "total": total})
++	cash, _ := model.SumAffiliateOutflow(userId, model.AffOutflowCash)
++	credit, _ := model.SumAffiliateOutflow(userId, model.AffOutflowCredit)
++	common.ApiSuccess(c, gin.H{
++		"items":       rows,
++		"total":       total,
++		"sum_cash":    cash,
++		"sum_credit":  credit,
++	})
 +}
 diff --git a/controller/user.go b/controller/user.go
-index 9b8d931..90de639 100644
+index 9b8d931..b444eea 100644
 --- a/controller/user.go
 +++ b/controller/user.go
-@@ -507,6 +507,18 @@ func GetSelf(c *gin.Context) {
+@@ -507,6 +507,22 @@ func GetSelf(c *gin.Context) {
  // administrator-only remarks.
  func buildSelfUserData(user *model.User) map[string]interface{} {
  	userSetting := user.GetSetting()
-+	// 「已提现」只能来自提现流水。用 aff_history-aff_quota 算是错的 ——
-+	// 那个差值还混着代理自助转成消费额度的部分。
-+	affWithdrawn, err := model.SumAffiliateWithdrawn(user.Id)
++	// 「已提现」只能来自支出流水。用 aff_history-aff_quota 算是错的 ——
++	// 那个差值把自助转额度也算了进去,两种流出混成一个数。
++	affWithdrawn, err := model.SumAffiliateOutflow(user.Id, model.AffOutflowCash)
 +	if err != nil {
 +		affWithdrawn = 0
++	}
++	affTransferred, err := model.SumAffiliateOutflow(user.Id, model.AffOutflowCredit)
++	if err != nil {
++		affTransferred = 0
 +	}
 +	// users.aff_count 只在「注册赠送」开启时才累加,本站不做赠送,
 +	// 那个字段恒为 0。实时统计才准。
@@ -123,7 +135,7 @@ index 9b8d931..90de639 100644
  	permissions := calculateUserPermissions(user.Role)
  	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
  	return map[string]interface{}{
-@@ -526,8 +538,9 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
+@@ -526,8 +542,10 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
  		"used_quota":        user.UsedQuota,
  		"request_count":     user.RequestCount,
  		"aff_code":          user.AffCode,
@@ -131,6 +143,7 @@ index 9b8d931..90de639 100644
 +		"aff_count":         affCount,
  		"aff_quota":         user.AffQuota,
 +		"aff_withdrawn":     affWithdrawn,
++		"aff_transferred":   affTransferred,
  		"aff_history_quota": user.AffHistoryQuota,
  		"inviter_id":        user.InviterId,
  		"linux_do_id":       user.LinuxDOId,
@@ -225,10 +238,10 @@ index 0000000..0609543
 +}
 diff --git a/model/affiliate_withdrawal.go b/model/affiliate_withdrawal.go
 new file mode 100644
-index 0000000..0435a71
+index 0000000..19c72b2
 --- /dev/null
 +++ b/model/affiliate_withdrawal.go
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,106 @@
 +package model
 +
 +import (
@@ -239,21 +252,30 @@ index 0000000..0435a71
 +	"github.com/QuantumNous/new-api/logger"
 +)
 +
-+// AffiliateWithdrawal 佣金提现登记。
++// AffiliateWithdrawal 佣金支出流水,两种形式共用一张表:
 +//
-+// 提现本身是人工办理(代理加微信、主理人转账),系统只负责记账:
-+// 扣减 aff_quota 并留下一条可追溯的流水。
++//	cash   人工提现 —— 代理加微信,主理人转账后在后台登记
++//	credit 自助转额度 —— 代理自己在钱包页把佣金转成可用额度
 +//
-+// 不与 AffiliateCommission 合表 —— 那张表每行表示"赚了多少",
++// 合表而不是各建一张:两者本质都是"佣金流出、aff_quota 减少",
++// 只是去向不同。合在一起管理员一眼能看全某个代理取走了多少。
++//
++// 不与 AffiliateCommission 合表 —— 那张每行表示"赚了多少",
 +// 这张表示"取走多少",语义不同,混在一起对账会绕。
 +type AffiliateWithdrawal struct {
 +	Id         int    `json:"id"`
-+	UserId     int    `json:"user_id" gorm:"index"`
++	UserId     int    `json:"user_id" gorm:"index:idx_aff_wd_user_type,priority:1"`
++	Type       string `json:"type" gorm:"type:varchar(16);default:'cash';index:idx_aff_wd_user_type,priority:2"`
 +	Amount     int    `json:"amount"`
-+	OperatorId int    `json:"operator_id"`                    // 经办管理员
-+	Note       string `json:"note" gorm:"type:varchar(255)"`  // 必填,记微信转账单号等
++	OperatorId int    `json:"operator_id"`                   // 经办管理员;自助转额度为 0
++	Note       string `json:"note" gorm:"type:varchar(255)"` // 提现必填;自助转额度自动生成
 +	CreatedAt  int64  `json:"created_at" gorm:"autoCreateTime;index"`
 +}
++
++const (
++	AffOutflowCash   = "cash"   // 人工提现
++	AffOutflowCredit = "credit" // 自助转成消费额度
++)
 +
 +// RecordAffiliateWithdrawal 登记一笔提现。
 +//
@@ -287,6 +309,7 @@ index 0000000..0435a71
 +	}
 +	if err := tx.Create(&AffiliateWithdrawal{
 +		UserId:     userId,
++		Type:       AffOutflowCash,
 +		Amount:     amount,
 +		OperatorId: operatorId,
 +		Note:       note,
@@ -304,18 +327,21 @@ index 0000000..0435a71
 +	return nil
 +}
 +
-+// SumAffiliateWithdrawn 某代理累计已提现金额,供前端「已提现」展示。
-+func SumAffiliateWithdrawn(userId int) (int, error) {
++// SumAffiliateOutflow 某代理按形式汇总的佣金流出额。
++func SumAffiliateOutflow(userId int, outflowType string) (int, error) {
 +	var sum int
 +	err := DB.Model(&AffiliateWithdrawal{}).
-+		Where("user_id = ?", userId).
++		Where("user_id = ? AND type = ?", userId, outflowType).
 +		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
 +	return sum, err
 +}
 +
-+// GetUserAffiliateWithdrawals 分页查提现流水。
-+func GetUserAffiliateWithdrawals(userId, offset, limit int) (rows []AffiliateWithdrawal, total int64, err error) {
++// GetUserAffiliateWithdrawals 分页查佣金支出流水。outflowType 为空则不限形式。
++func GetUserAffiliateWithdrawals(userId, offset, limit int, outflowType string) (rows []AffiliateWithdrawal, total int64, err error) {
 +	q := DB.Model(&AffiliateWithdrawal{}).Where("user_id = ?", userId)
++	if outflowType != "" {
++		q = q.Where("type = ?", outflowType)
++	}
 +	if err = q.Count(&total).Error; err != nil {
 +		return
 +	}
@@ -335,6 +361,36 @@ index 2144559..865b8cb 100644
  		&SubscriptionOrder{},
  		&UserSubscription{},
  		&SubscriptionPreConsumeRecord{},
+diff --git a/model/user.go b/model/user.go
+index 7bc060a..77e5983 100644
+--- a/model/user.go
++++ b/model/user.go
+@@ -577,8 +577,24 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
+ 		return err
+ 	}
+ 
++	// 记一条支出流水。必须在同一事务内 —— 否则余额扣了流水没写,
++	// 管理员对账时会发现佣金凭空消失。
++	if err := tx.Create(&AffiliateWithdrawal{
++		UserId: user.Id,
++		Type:   AffOutflowCredit,
++		Amount: quota,
++		Note:   "自助转为消费额度",
++	}).Error; err != nil {
++		return err
++	}
++
+ 	// 提交事务
+-	return tx.Commit().Error
++	if err := tx.Commit().Error; err != nil {
++		return err
++	}
++
++	RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("佣金转为消费额度 %s", logger.LogQuota(quota)))
++	return nil
+ }
+ 
+ func (user *User) prepareForInsert(tx *gorm.DB) error {
 diff --git a/router/api-router.go b/router/api-router.go
 index 31c595e..a32fb3c 100644
 --- a/router/api-router.go
@@ -860,15 +916,17 @@ index 95f3663..15f1359 100644
              </p>
            )}
 diff --git a/web/src/features/wallet/types.ts b/web/src/features/wallet/types.ts
-index 5da08f0..fdcbcac 100644
+index 5da08f0..72876fb 100644
 --- a/web/src/features/wallet/types.ts
 +++ b/web/src/features/wallet/types.ts
-@@ -240,6 +240,8 @@ export interface UserWalletData {
+@@ -240,6 +240,10 @@ export interface UserWalletData {
    aff_history_quota: number
    /** Number of successful affiliate invites */
    aff_count: number
-+  /** 累计已提现为现金的佣金,来自提现流水;不含自助转成额度的部分 */
++  /** 累计已提现为现金的佣金,来自支出流水;不含自助转成额度的部分 */
 +  aff_withdrawn?: number
++  /** 累计自助转为消费额度的佣金 */
++  aff_transferred?: number
    /** User group */
    group: string
  }
