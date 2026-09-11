@@ -25,20 +25,32 @@ index e69de29..6f4b48f 100644
 +v1.0.0-rc.25-persecond
 diff --git a/controller/affiliate.go b/controller/affiliate.go
 new file mode 100644
-index 0000000..fbc6222
+index 0000000..3ba2481
 --- /dev/null
 +++ b/controller/affiliate.go
-@@ -0,0 +1,79 @@
+@@ -0,0 +1,91 @@
 +package controller
 +
 +import (
++	"net/http"
 +	"strconv"
 +
 +	"github.com/QuantumNous/new-api/common"
 +	"github.com/QuantumNous/new-api/model"
++	"github.com/QuantumNous/new-api/setting/operation_setting"
 +
 +	"github.com/gin-gonic/gin"
 +)
++
++// GetAffiliateRules 返回推荐计划规则说明,供钱包页的入口展示。
++// 内容可以是 http(s) 链接(前端跳转)或 Markdown(前端弹窗渲染)。
++func GetAffiliateRules(c *gin.Context) {
++	c.JSON(http.StatusOK, gin.H{
++		"success": true,
++		"message": "",
++		"data":    operation_setting.GetAffiliateSetting().Rules,
++	})
++}
 +
 +type AffiliateWithdrawRequest struct {
 +	UserId int    `json:"user_id"`
@@ -392,10 +404,18 @@ index 7bc060a..77e5983 100644
  
  func (user *User) prepareForInsert(tx *gorm.DB) error {
 diff --git a/router/api-router.go b/router/api-router.go
-index 31c595e..a32fb3c 100644
+index 31c595e..32737dc 100644
 --- a/router/api-router.go
 +++ b/router/api-router.go
-@@ -135,6 +135,8 @@ func SetApiRouter(router *gin.Engine) {
+@@ -29,6 +29,7 @@ func SetApiRouter(router *gin.Engine) {
+ 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)
+ 		apiRouter.GET("/privacy-policy", controller.GetPrivacyPolicy)
+ 		apiRouter.GET("/about", controller.GetAbout)
++		apiRouter.GET("/affiliate/rules", controller.GetAffiliateRules)
+ 		//apiRouter.GET("/midjourney", controller.GetMidjourney)
+ 		apiRouter.GET("/home_page_content", controller.GetHomePageContent)
+ 		apiRouter.GET("/pricing", middleware.HeaderNavModuleAuth("pricing"), controller.GetPricing)
+@@ -135,6 +136,8 @@ func SetApiRouter(router *gin.Engine) {
  				adminRoute.GET("/", controller.GetAllUsers)
  				adminRoute.GET("/topup", controller.GetAllTopUps)
  				adminRoute.POST("/topup/complete", controller.AdminCompleteTopUp)
@@ -561,10 +581,10 @@ index 7ffa537..baf4e6b 100644
  		delta := actualQuota - preConsumed
 diff --git a/setting/operation_setting/affiliate_setting.go b/setting/operation_setting/affiliate_setting.go
 new file mode 100644
-index 0000000..01f3749
+index 0000000..f4fb506
 --- /dev/null
 +++ b/setting/operation_setting/affiliate_setting.go
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,63 @@
 +package operation_setting
 +
 +import "github.com/QuantumNous/new-api/setting/config"
@@ -589,6 +609,10 @@ index 0000000..01f3749
 +
 +	// 模型毛利率。"default" 为兜底值,其余只列例外。设 0 即排除出返佣。
 +	MarginRates map[string]float64 `json:"margin_rates"`
++
++	// 规则说明。填 http(s) 链接则卡片上的入口跳转过去,
++	// 填 Markdown 则在弹窗里渲染。留空则不显示入口。
++	Rules string `json:"rules"`
 +}
 +
 +var affiliateSetting = AffiliateSetting{
@@ -603,6 +627,7 @@ index 0000000..01f3749
 +		"default":       0.60, // 实测多数模型 60~67%,取下限保守
 +		"gpt-image2-4k": 0,    // 毛利仅 28%,返佣会吃穿利润,排除
 +	},
++	Rules: "",
 +}
 +
 +func init() {
@@ -640,10 +665,10 @@ index 86f6972..d38f080 100644
    return (
 diff --git a/web/src/features/system-settings/billing/affiliate-settings-section.tsx b/web/src/features/system-settings/billing/affiliate-settings-section.tsx
 new file mode 100644
-index 0000000..b6e015b
+index 0000000..5c8dac4
 --- /dev/null
 +++ b/web/src/features/system-settings/billing/affiliate-settings-section.tsx
-@@ -0,0 +1,281 @@
+@@ -0,0 +1,303 @@
 +import { zodResolver } from '@hookform/resolvers/zod'
 +import type { ChangeEvent } from 'react'
 +import type { Resolver } from 'react-hook-form'
@@ -686,6 +711,7 @@ index 0000000..b6e015b
 +    valid_days: z.coerce.number().min(0),
 +    team_rate: z.coerce.number().min(0).max(1),
 +    max_depth: z.coerce.number().min(1).max(20),
++    rules: z.string(),
 +    margin_rates: z.string().refine(
 +      (v) => {
 +        try {
@@ -902,6 +928,27 @@ index 0000000..b6e015b
 +            <SettingsFormGridItem span='full'>
 +              <FormField
 +                control={form.control}
++                name='affiliate_setting.rules'
++                render={({ field }) => (
++                  <FormItem>
++                    <FormLabel>{t('Referral program rules')}</FormLabel>
++                    <FormControl>
++                      <Textarea rows={6} {...field} />
++                    </FormControl>
++                    <FormDescription>
++                      {t(
++                        'Shown via a link on the referral card. Paste Markdown to render it in a dialog, or an http(s) link to open it in a new tab. Leave empty to hide the link.'
++                      )}
++                    </FormDescription>
++                    <FormMessage />
++                  </FormItem>
++                )}
++              />
++            </SettingsFormGridItem>
++
++            <SettingsFormGridItem span='full'>
++              <FormField
++                control={form.control}
 +                name='affiliate_setting.margin_rates'
 +                render={({ field }) => (
 +                  <FormItem>
@@ -926,7 +973,7 @@ index 0000000..b6e015b
 +  )
 +}
 diff --git a/web/src/features/system-settings/billing/section-registry.tsx b/web/src/features/system-settings/billing/section-registry.tsx
-index 43cd0e9..8df9406 100644
+index 43cd0e9..dcf7c9a 100644
 --- a/web/src/features/system-settings/billing/section-registry.tsx
 +++ b/web/src/features/system-settings/billing/section-registry.tsx
 @@ -21,6 +21,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
@@ -937,7 +984,7 @@ index 43cd0e9..8df9406 100644
  import { PaymentSettingsSection } from '../integrations/payment-settings-section'
  import { RatioSettingsCard } from '../models/ratio-settings-card'
  import type { BillingSettings } from '../types'
-@@ -128,6 +129,28 @@ const BILLING_SECTIONS = [
+@@ -128,6 +129,29 @@ const BILLING_SECTIONS = [
        />
      ),
    },
@@ -955,6 +1002,7 @@ index 43cd0e9..8df9406 100644
 +            valid_days: settings['affiliate_setting.valid_days'] ?? 365,
 +            team_rate: settings['affiliate_setting.team_rate'] ?? 0.05,
 +            max_depth: settings['affiliate_setting.max_depth'] ?? 5,
++            rules: settings['affiliate_setting.rules'] ?? '',
 +            margin_rates:
 +              settings['affiliate_setting.margin_rates'] ??
 +              '{"default":0.6,"gpt-image2-4k":0}',
@@ -967,10 +1015,10 @@ index 43cd0e9..8df9406 100644
      id: 'payment',
      titleKey: 'Payment Gateway',
 diff --git a/web/src/features/system-settings/types.ts b/web/src/features/system-settings/types.ts
-index 063694b..cd4353b 100644
+index 063694b..a95f9e2 100644
 --- a/web/src/features/system-settings/types.ts
 +++ b/web/src/features/system-settings/types.ts
-@@ -251,6 +251,15 @@ export type ModelSettings = {
+@@ -251,6 +251,16 @@ export type ModelSettings = {
  }
  
  export type BillingSettings = {
@@ -983,6 +1031,7 @@ index 063694b..cd4353b 100644
 +  'affiliate_setting.team_rate': number
 +  'affiliate_setting.max_depth': number
 +  'affiliate_setting.margin_rates': string
++  'affiliate_setting.rules': string
    QuotaForNewUser: number
    PreConsumedQuota: number
    QuotaForInviter: number
@@ -1193,11 +1242,52 @@ index adf8b5c..fd75c8c 100644
      </div>
    )
  }
+diff --git a/web/src/features/wallet/api.ts b/web/src/features/wallet/api.ts
+index e2f7073..18292c8 100644
+--- a/web/src/features/wallet/api.ts
++++ b/web/src/features/wallet/api.ts
+@@ -246,3 +246,12 @@ export async function completeOrder(
+   const res = await api.post('/api/user/topup/complete', request)
+   return res.data
+ }
++
++/** 推荐计划规则。内容可为 http(s) 链接或 Markdown,留空表示未配置。 */
++export async function getAffiliateRules(): Promise<{
++  success: boolean
++  data?: string
++}> {
++  const res = await api.get('/api/affiliate/rules')
++  return res.data
++}
 diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-index e1824d3..29b10a5 100644
+index e1824d3..a3fcaf5 100644
 --- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
 +++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-@@ -48,7 +48,7 @@ export function AffiliateRewardsCard({
+@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
+ For commercial licensing, please contact support@quantumnous.com
+ */
+ import { Share2 } from 'lucide-react'
++import { useState } from 'react'
+ import { useTranslation } from 'react-i18next'
+ 
+ import { CopyButton } from '@/components/copy-button'
+@@ -28,6 +29,10 @@ import { Skeleton } from '@/components/ui/skeleton'
+ import { formatQuota } from '@/lib/format'
+ 
+ import type { UserWalletData } from '../types'
++import {
++  AffiliateRulesDialog,
++  useAffiliateRules,
++} from './affiliate-rules-dialog'
+ 
+ interface AffiliateRewardsCardProps {
+   user: UserWalletData | null
+@@ -45,10 +50,12 @@ export function AffiliateRewardsCard({
+   loading,
+ }: AffiliateRewardsCardProps) {
+   const { t } = useTranslation()
++  const [rulesOpen, setRulesOpen] = useState(false)
++  const { raw: rulesRaw, hasRules, isLink: rulesIsLink } = useAffiliateRules()
    if (loading) {
      return (
        <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -1206,7 +1296,7 @@ index e1824d3..29b10a5 100644
            <div>
              <Skeleton className='h-5 w-32' />
              <Skeleton className='mt-2 h-4 w-48' />
-@@ -64,7 +64,7 @@ export function AffiliateRewardsCard({
+@@ -64,7 +71,7 @@ export function AffiliateRewardsCard({
  
    return (
      <Card data-card-hover='false' className='bg-muted/20 py-0'>
@@ -1215,7 +1305,25 @@ index e1824d3..29b10a5 100644
          <div className='flex min-w-0 items-center gap-2.5'>
            <IconBadge tone='chart-3'>
              <Share2 />
-@@ -81,11 +81,13 @@ export function AffiliateRewardsCard({
+@@ -78,14 +85,31 @@ export function AffiliateRewardsCard({
+                 'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+               )}
+             </p>
++            {hasRules && (
++              <button
++                type='button'
++                onClick={() => {
++                  if (rulesIsLink) {
++                    window.open(rulesRaw, '_blank', 'noopener,noreferrer')
++                  } else {
++                    setRulesOpen(true)
++                  }
++                }}
++                className='text-primary mt-1 text-xs font-medium underline underline-offset-4 hover:opacity-80'
++              >
++                {t('View referral program rules')}
++              </button>
++            )}
            </div>
          </div>
  
@@ -1233,7 +1341,7 @@ index e1824d3..29b10a5 100644
            ].map(([label, value]) => (
              <div key={label}>
                <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-@@ -112,16 +114,14 @@ export function AffiliateRewardsCard({
+@@ -112,16 +136,14 @@ export function AffiliateRewardsCard({
              tooltip={t('Copy referral link')}
              aria-label={t('Copy referral link')}
            />
@@ -1258,6 +1366,83 @@ index e1824d3..29b10a5 100644
          </div>
          {!complianceConfirmed ? (
            <p className='text-muted-foreground text-xs lg:col-span-3'>
+@@ -131,6 +153,8 @@ export function AffiliateRewardsCard({
+           </p>
+         ) : null}
+       </CardContent>
++
++      <AffiliateRulesDialog open={rulesOpen} onOpenChange={setRulesOpen} />
+     </Card>
+   )
+ }
+diff --git a/web/src/features/wallet/components/affiliate-rules-dialog.tsx b/web/src/features/wallet/components/affiliate-rules-dialog.tsx
+new file mode 100644
+index 0000000..aaa4a0d
+--- /dev/null
++++ b/web/src/features/wallet/components/affiliate-rules-dialog.tsx
+@@ -0,0 +1,62 @@
++import { useQuery } from '@tanstack/react-query'
++import { useTranslation } from 'react-i18next'
++
++import { Dialog } from '@/components/dialog'
++import { RichContent } from '@/components/rich-content'
++import { Skeleton } from '@/components/ui/skeleton'
++import { isHttpUrl } from '@/lib/content-format'
++
++import { getAffiliateRules } from '../api'
++
++/**
++ * 规则内容由管理员在「计费与支付 → 代理佣金」里配置,一个字段两种用法:
++ * 填 http(s) 链接则由调用方直接跳转,填 Markdown 则在本弹窗内渲染。
++ * 这样规则改动不需要重新构建前端。
++ */
++export function useAffiliateRules() {
++  const { data } = useQuery({
++    queryKey: ['affiliate-rules'],
++    queryFn: getAffiliateRules,
++    staleTime: 5 * 60 * 1000,
++  })
++  const raw = data?.data?.trim() ?? ''
++  return { raw, hasRules: raw.length > 0, isLink: raw.length > 0 && isHttpUrl(raw) }
++}
++
++interface AffiliateRulesDialogProps {
++  open: boolean
++  onOpenChange: (open: boolean) => void
++}
++
++export function AffiliateRulesDialog({
++  open,
++  onOpenChange,
++}: AffiliateRulesDialogProps) {
++  const { t } = useTranslation()
++  const { raw } = useAffiliateRules()
++
++  return (
++    <Dialog
++      open={open}
++      onOpenChange={onOpenChange}
++      title={t('Referral Program Rules')}
++      contentClassName='sm:max-w-2xl'
++    >
++      <div className='max-h-[70vh] overflow-y-auto pr-1'>
++        {raw ? (
++          <RichContent
++            mode='markdown'
++            content={raw}
++            className='prose-neutral dark:prose-invert prose-sm max-w-none'
++          />
++        ) : (
++          <div className='space-y-2'>
++            <Skeleton className='h-4 w-full' />
++            <Skeleton className='h-4 w-5/6' />
++            <Skeleton className='h-4 w-4/6' />
++          </div>
++        )}
++      </div>
++    </Dialog>
++  )
++}
 diff --git a/web/src/features/wallet/components/recharge-form-card.tsx b/web/src/features/wallet/components/recharge-form-card.tsx
 index 95f3663..15f1359 100644
 --- a/web/src/features/wallet/components/recharge-form-card.tsx
@@ -1298,10 +1483,10 @@ index 5da08f0..72876fb 100644
    group: string
  }
 diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
-index 86095b2..06c41a0 100644
+index 86095b2..44f069a 100644
 --- a/web/src/i18n/locales/en.json
 +++ b/web/src/i18n/locales/en.json
-@@ -5316,6 +5316,39 @@
+@@ -5316,6 +5316,43 @@
      "Zero retention": "Zero retention",
      "Zhipu": "Zhipu",
      "Zhipu V4": "Zhipu V4",
@@ -1339,11 +1524,15 @@ index 86095b2..06c41a0 100644
 +    "Gross margin by model": "Gross margin by model",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.",
 +    "Must be a valid JSON object": "Must be a valid JSON object",
-+    "Transferred to Credit": "Transferred to Credit"
++    "Transferred to Credit": "Transferred to Credit",
++    "View referral program rules": "View referral program rules",
++    "Referral Program Rules": "Referral Program Rules",
++    "Referral program rules": "Referral program rules",
++    "Shown via a link on the referral card. Paste Markdown to render it in a dialog, or an http(s) link to open it in a new tab. Leave empty to hide the link.": "Shown via a link on the referral card. Paste Markdown to render it in a dialog, or an http(s) link to open it in a new tab. Leave empty to hide the link."
    }
  }
 diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
-index 25250e2..d996e0a 100644
+index 25250e2..e89d624 100644
 --- a/web/src/i18n/locales/zh-TW.json
 +++ b/web/src/i18n/locales/zh-TW.json
 @@ -2137,7 +2137,7 @@
@@ -1355,7 +1544,7 @@ index 25250e2..d996e0a 100644
      "Get started": "開始使用",
      "Get Started": "開始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,39 @@
+@@ -5316,6 +5316,43 @@
      "Zero retention": "零數據保留",
      "Zhipu": "智譜",
      "Zhipu V4": "智譜 V4",
@@ -1393,11 +1582,15 @@ index 25250e2..d996e0a 100644
 +    "Gross margin by model": "各模型毛利率",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
 +    "Must be a valid JSON object": "必須是合法的 JSON 物件",
-+    "Transferred to Credit": "已轉額度"
++    "Transferred to Credit": "已轉額度",
++    "View referral program rules": "點擊查看推薦計劃規則",
++    "Referral Program Rules": "推薦計劃規則",
++    "Referral program rules": "推薦計劃規則",
++    "Shown via a link on the referral card. Paste Markdown to render it in a dialog, or an http(s) link to open it in a new tab. Leave empty to hide the link.": "以連結形式顯示在推薦計劃卡片上。貼上 Markdown 則在彈窗內渲染,填 http(s) 連結則新分頁開啟。留空則不顯示該入口。"
    }
  }
 diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
-index 457b1c5..33bd479 100644
+index 457b1c5..c4d2ded 100644
 --- a/web/src/i18n/locales/zh.json
 +++ b/web/src/i18n/locales/zh.json
 @@ -2137,7 +2137,7 @@
@@ -1409,7 +1602,7 @@ index 457b1c5..33bd479 100644
      "Get started": "开始使用",
      "Get Started": "开始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,39 @@
+@@ -5316,6 +5316,43 @@
      "Zero retention": "零数据保留",
      "Zhipu": "智谱",
      "Zhipu V4": "智谱 V4",
@@ -1447,6 +1640,10 @@ index 457b1c5..33bd479 100644
 +    "Gross margin by model": "各模型毛利率",
 +    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
 +    "Must be a valid JSON object": "必须是合法的 JSON 对象",
-+    "Transferred to Credit": "已转额度"
++    "Transferred to Credit": "已转额度",
++    "View referral program rules": "点击查看推荐计划规则",
++    "Referral Program Rules": "推荐计划规则",
++    "Referral program rules": "推荐计划规则",
++    "Shown via a link on the referral card. Paste Markdown to render it in a dialog, or an http(s) link to open it in a new tab. Leave empty to hide the link.": "以链接形式显示在推荐计划卡片上。粘贴 Markdown 则在弹窗内渲染,填 http(s) 链接则新标签页打开。留空则不显示该入口。"
    }
  }
