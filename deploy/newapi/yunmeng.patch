@@ -101,10 +101,10 @@ index 0000000..4c1c44f
 +	common.ApiSuccess(c, gin.H{"items": rows, "total": total})
 +}
 diff --git a/controller/user.go b/controller/user.go
-index 9b8d931..988160e 100644
+index 9b8d931..90de639 100644
 --- a/controller/user.go
 +++ b/controller/user.go
-@@ -507,6 +507,12 @@ func GetSelf(c *gin.Context) {
+@@ -507,6 +507,18 @@ func GetSelf(c *gin.Context) {
  // administrator-only remarks.
  func buildSelfUserData(user *model.User) map[string]interface{} {
  	userSetting := user.GetSetting()
@@ -114,12 +114,21 @@ index 9b8d931..988160e 100644
 +	if err != nil {
 +		affWithdrawn = 0
 +	}
++	// users.aff_count 只在「注册赠送」开启时才累加,本站不做赠送,
++	// 那个字段恒为 0。实时统计才准。
++	affCount, err := model.CountInvitedUsers(user.Id)
++	if err != nil {
++		affCount = int64(user.AffCount)
++	}
  	permissions := calculateUserPermissions(user.Role)
  	permissions["admin_permissions"] = authz.Capabilities(user.Id, user.Role)
  	return map[string]interface{}{
-@@ -528,6 +534,7 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
+@@ -526,8 +538,9 @@ func buildSelfUserData(user *model.User) map[string]interface{} {
+ 		"used_quota":        user.UsedQuota,
+ 		"request_count":     user.RequestCount,
  		"aff_code":          user.AffCode,
- 		"aff_count":         user.AffCount,
+-		"aff_count":         user.AffCount,
++		"aff_count":         affCount,
  		"aff_quota":         user.AffQuota,
 +		"aff_withdrawn":     affWithdrawn,
  		"aff_history_quota": user.AffHistoryQuota,
@@ -127,10 +136,10 @@ index 9b8d931..988160e 100644
  		"linux_do_id":       user.LinuxDOId,
 diff --git a/model/affiliate.go b/model/affiliate.go
 new file mode 100644
-index 0000000..30a3831
+index 0000000..0609543
 --- /dev/null
 +++ b/model/affiliate.go
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,83 @@
 +package model
 +
 +import "gorm.io/gorm"
@@ -202,6 +211,17 @@ index 0000000..30a3831
 +		Where("user_id = ? AND status = ?", userId, status).
 +		Select("COALESCE(SUM(amount), 0)").Scan(&sum).Error
 +	return sum, err
++}
++
++// CountInvitedUsers 实时统计某人推荐了多少用户。
++//
++// 不用 users.aff_count —— 它的累加被上游绑在「注册赠送」分支里
++// (QuotaForInviter > 0 才执行),本站不做赠送,那个字段永远是 0。
++// inviter_id 有索引,实时 COUNT 成本可忽略,而且对历史用户也准。
++func CountInvitedUsers(userId int) (int64, error) {
++	var n int64
++	err := DB.Model(&User{}).Where("inviter_id = ?", userId).Count(&n).Error
++	return n, err
 +}
 diff --git a/model/affiliate_withdrawal.go b/model/affiliate_withdrawal.go
 new file mode 100644
