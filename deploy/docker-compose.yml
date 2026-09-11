@@ -67,7 +67,7 @@ services:
     # 仍按 digest 锁定,内容被替换会拉取失败。
     # 回滚:换回下面这行官方签名镜像即可
     #   calciumion/new-api:v1.0.0-rc.25@sha256:54a0b10924aa75fa5b5947208b820ced66b6ef4b445b35f122b31d80676aba2b
-    image: ghcr.io/rachel-0627/yunmengapi-newapi:1757c5db8daf43186fd8e1e539205d58c2a92e1d@sha256:aace1e02ea2997dfb1044f2efb289138e015cd6fd6d8d26fa8730aff0e1d41eb
+    image: ghcr.io/rachel-0627/yunmengapi-newapi:3e29cf27881896851d6053b384a9fd9496d0b469@sha256:1381bb261a424b23a0aa454fb9e3341f710740bb67a0de5eccd536e39df0b1a3
     container_name: new-api
     restart: always
     command: --log-dir /app/logs
