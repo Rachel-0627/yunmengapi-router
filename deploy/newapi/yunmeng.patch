@@ -1260,7 +1260,7 @@ index e2f7073..18292c8 100644
 +  return res.data
 +}
 diff --git a/web/src/features/wallet/components/affiliate-rewards-card.tsx b/web/src/features/wallet/components/affiliate-rewards-card.tsx
-index e1824d3..a3fcaf5 100644
+index e1824d3..6b90909 100644
 --- a/web/src/features/wallet/components/affiliate-rewards-card.tsx
 +++ b/web/src/features/wallet/components/affiliate-rewards-card.tsx
 @@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
@@ -1341,32 +1341,59 @@ index e1824d3..a3fcaf5 100644
            ].map(([label, value]) => (
              <div key={label}>
                <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-@@ -112,16 +136,14 @@ export function AffiliateRewardsCard({
-             tooltip={t('Copy referral link')}
-             aria-label={t('Copy referral link')}
-           />
+@@ -98,30 +122,33 @@ export function AffiliateRewardsCard({
+           ))}
+         </div>
+ 
+-        <div className='flex items-center gap-2'>
+-          <Input
+-            value={affiliateLink}
+-            readOnly
+-            className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
+-          />
+-          <CopyButton
+-            value={affiliateLink}
+-            variant='outline'
+-            className='bg-background size-9 shrink-0'
+-            iconClassName='size-4'
+-            tooltip={t('Copy referral link')}
+-            aria-label={t('Copy referral link')}
+-          />
 -          {hasRewards && (
--            <Button
--              onClick={onTransfer}
++        <div className='min-w-0'>
++          <div className='text-muted-foreground mb-1 text-[11px] font-medium tracking-wider uppercase'>
++            {t('Copy referral link')}
++          </div>
++          <div className='flex items-center gap-2'>
++            <Input
++              value={affiliateLink}
++              readOnly
++              className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
++            />
++            <CopyButton
++              value={affiliateLink}
++              variant='outline'
++              className='bg-background size-9 shrink-0'
++              iconClassName='size-4'
++              tooltip={t('Copy referral link')}
++              aria-label={t('Copy referral link')}
++            />
+             <Button
+               onClick={onTransfer}
 -              disabled={!complianceConfirmed}
--              className='h-9 shrink-0 px-3'
--              size='sm'
--            >
++              disabled={!complianceConfirmed || !hasRewards}
+               className='h-9 shrink-0 px-3'
+               size='sm'
+             >
 -              {t('Transfer to Balance')}
--            </Button>
++              {t('Withdraw to Credit')}
+             </Button>
 -          )}
-+          <Button
-+            onClick={onTransfer}
-+            disabled={!complianceConfirmed || !hasRewards}
-+            className='h-9 shrink-0 px-3'
-+            size='sm'
-+          >
-+            {t('Withdraw to Credit')}
-+          </Button>
++          </div>
          </div>
          {!complianceConfirmed ? (
            <p className='text-muted-foreground text-xs lg:col-span-3'>
-@@ -131,6 +153,8 @@ export function AffiliateRewardsCard({
+@@ -131,6 +158,8 @@ export function AffiliateRewardsCard({
            </p>
          ) : null}
        </CardContent>
