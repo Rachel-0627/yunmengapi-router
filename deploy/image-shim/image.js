@@ -21,7 +21,10 @@ function normalize(j) {
   let state = 'pending'
   if (['completed', 'success', 'succeeded', 'finished'].includes(s)) state = 'done'
   else if (['failed', 'failure', 'cancelled', 'canceled', 'error'].includes(s)) state = 'failed'
-  return { state, url, reason: d?.fail_reason || d?.message || d?.error?.message || '' }
+  const reason = d?.fail_reason || d?.failReason || d?.error_message || d?.errorMessage ||
+                 d?.message || d?.msg || d?.detail || d?.error?.message ||
+                 (typeof d?.error === 'string' ? d.error : '') || ''
+  return { state, url, reason }
 }
 
 export async function generate(req, res, auth, body) {
@@ -58,6 +61,7 @@ export async function generate(req, res, auth, body) {
   // ── ② 轮询直到出图 ──
   const deadline = t0 + CFG.maxWaitMs
   let softErrors = 0
+  let raw = null
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, CFG.pollMs))
     let n
@@ -70,14 +74,16 @@ export async function generate(req, res, auth, body) {
         continue
       }
       softErrors = 0
-      n = normalize(await r.json())
+      raw = await r.json()
+      n = normalize(raw)
     } catch {
       if (++softErrors >= 5) return fail(res, 504, '任务查询超时', 'poll_timeout')
       continue
     }
 
     if (n.state === 'failed') {
-      log(`[task] ${taskId} 失败: ${n.reason}`)
+      // 上游的失败字段名不固定,原样打出整个响应,避免再靠猜
+      log(`[task] ${taskId} 失败: ${n.reason || '(无 reason 字段)'} | 原始响应: ${JSON.stringify(raw).slice(0, 600)}`)
       return fail(res, 502, n.reason || '上游生成失败', 'generation_failed')
     }
     if (n.state === 'done') {
