@@ -638,6 +638,354 @@ index 86f6972..d38f080 100644
    }
  
    return (
+diff --git a/web/src/features/system-settings/billing/affiliate-settings-section.tsx b/web/src/features/system-settings/billing/affiliate-settings-section.tsx
+new file mode 100644
+index 0000000..b6e015b
+--- /dev/null
++++ b/web/src/features/system-settings/billing/affiliate-settings-section.tsx
+@@ -0,0 +1,281 @@
++import { zodResolver } from '@hookform/resolvers/zod'
++import type { ChangeEvent } from 'react'
++import type { Resolver } from 'react-hook-form'
++import { useTranslation } from 'react-i18next'
++import * as z from 'zod'
++
++import {
++  Form,
++  FormControl,
++  FormDescription,
++  FormField,
++  FormItem,
++  FormLabel,
++  FormMessage,
++} from '@/components/ui/form'
++import { Input } from '@/components/ui/input'
++import { Switch } from '@/components/ui/switch'
++import { Textarea } from '@/components/ui/textarea'
++
++import { FormDirtyIndicator } from '../components/form-dirty-indicator'
++import { FormNavigationGuard } from '../components/form-navigation-guard'
++import {
++  SettingsForm,
++  SettingsSwitchContent,
++  SettingsSwitchItem,
++  SettingsFormGrid,
++  SettingsFormGridItem,
++} from '../components/settings-form-layout'
++import { SettingsPageFormActions } from '../components/settings-page-context'
++import { SettingsSection } from '../components/settings-section'
++import { useSettingsForm } from '../hooks/use-settings-form'
++import { useUpdateOption } from '../hooks/use-update-option'
++
++const affiliateSchema = z.object({
++  affiliate_setting: z.object({
++    enabled: z.boolean(),
++    new_user_rate: z.coerce.number().min(0).max(1),
++    new_user_hours: z.coerce.number().min(0),
++    long_term_rate: z.coerce.number().min(0).max(1),
++    valid_days: z.coerce.number().min(0),
++    team_rate: z.coerce.number().min(0).max(1),
++    max_depth: z.coerce.number().min(1).max(20),
++    margin_rates: z.string().refine(
++      (v) => {
++        try {
++          const parsed = JSON.parse(v)
++          return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
++        } catch {
++          return false
++        }
++      },
++      { message: 'Must be a valid JSON object' }
++    ),
++  }),
++})
++
++type AffiliateFormValues = z.infer<typeof affiliateSchema>
++
++type Props = { defaultValues: AffiliateFormValues }
++
++export function AffiliateSettingsSection({ defaultValues }: Props) {
++  const { t } = useTranslation()
++  const updateOption = useUpdateOption()
++
++  const onNumber =
++    (onChange: (v: number | '') => void) => (e: ChangeEvent<HTMLInputElement>) => {
++      const v = e.currentTarget.valueAsNumber
++      onChange(Number.isNaN(v) ? '' : v)
++    }
++
++  const { form, handleSubmit, isDirty, isSubmitting } =
++    useSettingsForm<AffiliateFormValues>({
++      resolver: zodResolver(affiliateSchema) as Resolver<
++        AffiliateFormValues,
++        unknown,
++        AffiliateFormValues
++      >,
++      defaultValues,
++      onSubmit: async (_data, changedFields) => {
++        for (const [key, value] of Object.entries(changedFields)) {
++          await updateOption.mutateAsync({
++            key,
++            value: value as string | number | boolean,
++          })
++        }
++      },
++    })
++
++  return (
++    <SettingsSection title={t('Affiliate Commission')}>
++      <FormNavigationGuard when={isDirty} />
++      <Form {...form}>
++        <SettingsForm onSubmit={handleSubmit}>
++          <SettingsPageFormActions
++            onSave={handleSubmit}
++            isSaving={updateOption.isPending || isSubmitting}
++          />
++          <FormDirtyIndicator isDirty={isDirty} />
++
++          <SettingsFormGrid>
++            <SettingsFormGridItem span='full'>
++              <FormField
++                control={form.control}
++                name='affiliate_setting.enabled'
++                render={({ field }) => (
++                  <SettingsSwitchItem>
++                    <SettingsSwitchContent>
++                      <FormLabel>{t('Enable Affiliate Commission')}</FormLabel>
++                      <FormDescription>
++                        {t(
++                          'Pay referrers a share of the profit their referred users generate. Takes effect on new consumption only.'
++                        )}
++                      </FormDescription>
++                    </SettingsSwitchContent>
++                    <FormControl>
++                      <Switch
++                        checked={field.value}
++                        onCheckedChange={field.onChange}
++                        disabled={updateOption.isPending}
++                      />
++                    </FormControl>
++                  </SettingsSwitchItem>
++                )}
++              />
++            </SettingsFormGridItem>
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.new_user_rate'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('New user rate')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      step='0.01'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>
++                    {t('Share of profit within the new-user window. 0.5 = 50%.')}
++                  </FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.new_user_hours'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('New user window (hours)')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>{t('168 = 7 days.')}</FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.long_term_rate'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('Long-term rate')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      step='0.01'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>
++                    {t('Applies after the new-user window until the binding expires.')}
++                  </FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.valid_days'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('Binding validity (days)')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>
++                    {t('No commission is paid after this many days since binding.')}
++                  </FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.team_rate'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('Team rate per level')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      step='0.01'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>
++                    {t(
++                      'Each upline earns this share of the level below. 0.05 decays to near zero by the third level.'
++                    )}
++                  </FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <FormField
++              control={form.control}
++              name='affiliate_setting.max_depth'
++              render={({ field }) => (
++                <FormItem>
++                  <FormLabel>{t('Max upline depth')}</FormLabel>
++                  <FormControl>
++                    <Input
++                      type='number'
++                      {...field}
++                      onChange={onNumber(field.onChange)}
++                    />
++                  </FormControl>
++                  <FormDescription>
++                    {t('Safety cap against cycles. Commission decays to zero on its own.')}
++                  </FormDescription>
++                  <FormMessage />
++                </FormItem>
++              )}
++            />
++
++            <SettingsFormGridItem span='full'>
++              <FormField
++                control={form.control}
++                name='affiliate_setting.margin_rates'
++                render={({ field }) => (
++                  <FormItem>
++                    <FormLabel>{t('Gross margin by model')}</FormLabel>
++                    <FormControl>
++                      <Textarea rows={4} className='font-mono text-xs' {...field} />
++                    </FormControl>
++                    <FormDescription>
++                      {t(
++                        'Commission is a share of profit, but the system only knows the sale price. List exceptions only; "default" is the fallback. Set a model to 0 to exclude it.'
++                      )}
++                    </FormDescription>
++                    <FormMessage />
++                  </FormItem>
++                )}
++              />
++            </SettingsFormGridItem>
++          </SettingsFormGrid>
++        </SettingsForm>
++      </Form>
++    </SettingsSection>
++  )
++}
+diff --git a/web/src/features/system-settings/billing/section-registry.tsx b/web/src/features/system-settings/billing/section-registry.tsx
+index 43cd0e9..8df9406 100644
+--- a/web/src/features/system-settings/billing/section-registry.tsx
++++ b/web/src/features/system-settings/billing/section-registry.tsx
+@@ -21,6 +21,7 @@ import { parseCurrencyDisplayType } from '@/lib/currency'
+ import { CheckinSettingsSection } from '../general/checkin-settings-section'
+ import { PricingSection } from '../general/pricing-section'
+ import { QuotaSettingsSection } from '../general/quota-settings-section'
++import { AffiliateSettingsSection } from './affiliate-settings-section'
+ import { PaymentSettingsSection } from '../integrations/payment-settings-section'
+ import { RatioSettingsCard } from '../models/ratio-settings-card'
+ import type { BillingSettings } from '../types'
+@@ -128,6 +129,28 @@ const BILLING_SECTIONS = [
+       />
+     ),
+   },
++  {
++    id: 'affiliate',
++    titleKey: 'Affiliate Commission',
++    build: (settings: BillingSettings) => (
++      <AffiliateSettingsSection
++        defaultValues={{
++          affiliate_setting: {
++            enabled: settings['affiliate_setting.enabled'] ?? false,
++            new_user_rate: settings['affiliate_setting.new_user_rate'] ?? 0.5,
++            new_user_hours: settings['affiliate_setting.new_user_hours'] ?? 168,
++            long_term_rate: settings['affiliate_setting.long_term_rate'] ?? 0.15,
++            valid_days: settings['affiliate_setting.valid_days'] ?? 365,
++            team_rate: settings['affiliate_setting.team_rate'] ?? 0.05,
++            max_depth: settings['affiliate_setting.max_depth'] ?? 5,
++            margin_rates:
++              settings['affiliate_setting.margin_rates'] ??
++              '{"default":0.6,"gpt-image2-4k":0}',
++          },
++        }}
++      />
++    ),
++  },
+   {
+     id: 'payment',
+     titleKey: 'Payment Gateway',
+diff --git a/web/src/features/system-settings/types.ts b/web/src/features/system-settings/types.ts
+index 063694b..cd4353b 100644
+--- a/web/src/features/system-settings/types.ts
++++ b/web/src/features/system-settings/types.ts
+@@ -251,6 +251,15 @@ export type ModelSettings = {
+ }
+ 
+ export type BillingSettings = {
++  // 代理佣金,后端注册名 affiliate_setting
++  'affiliate_setting.enabled': boolean
++  'affiliate_setting.new_user_rate': number
++  'affiliate_setting.new_user_hours': number
++  'affiliate_setting.long_term_rate': number
++  'affiliate_setting.valid_days': number
++  'affiliate_setting.team_rate': number
++  'affiliate_setting.max_depth': number
++  'affiliate_setting.margin_rates': string
+   QuotaForNewUser: number
+   PreConsumedQuota: number
+   QuotaForInviter: number
 diff --git a/web/src/features/users/api.ts b/web/src/features/users/api.ts
 index 1d1d16a..b0fc1ae 100644
 --- a/web/src/features/users/api.ts
@@ -931,10 +1279,10 @@ index 5da08f0..72876fb 100644
    group: string
  }
 diff --git a/web/src/i18n/locales/en.json b/web/src/i18n/locales/en.json
-index 86095b2..5782cc0 100644
+index 86095b2..c464176 100644
 --- a/web/src/i18n/locales/en.json
 +++ b/web/src/i18n/locales/en.json
-@@ -5316,6 +5316,20 @@
+@@ -5316,6 +5316,38 @@
      "Zero retention": "Zero retention",
      "Zhipu": "Zhipu",
      "Zhipu V4": "Zhipu V4",
@@ -953,11 +1301,29 @@ index 86095b2..5782cc0 100644
 +    "e.g. WeChat transfer ref, date": "e.g. WeChat transfer ref, date",
 +    "Required. Used to match this record against the actual transfer.": "Required. Used to match this record against the actual transfer.",
 +    "Withdrawal recorded": "Withdrawal recorded",
-+    "Failed to record withdrawal": "Failed to record withdrawal"
++    "Failed to record withdrawal": "Failed to record withdrawal",
++    "Affiliate Commission": "Affiliate Commission",
++    "Enable Affiliate Commission": "Enable Affiliate Commission",
++    "Pay referrers a share of the profit their referred users generate. Takes effect on new consumption only.": "Pay referrers a share of the profit their referred users generate. Takes effect on new consumption only.",
++    "New user rate": "New user rate",
++    "Share of profit within the new-user window. 0.5 = 50%.": "Share of profit within the new-user window. 0.5 = 50%.",
++    "New user window (hours)": "New user window (hours)",
++    "168 = 7 days.": "168 = 7 days.",
++    "Long-term rate": "Long-term rate",
++    "Applies after the new-user window until the binding expires.": "Applies after the new-user window until the binding expires.",
++    "Binding validity (days)": "Binding validity (days)",
++    "No commission is paid after this many days since binding.": "No commission is paid after this many days since binding.",
++    "Team rate per level": "Team rate per level",
++    "Each upline earns this share of the level below. 0.05 decays to near zero by the third level.": "Each upline earns this share of the level below. 0.05 decays to near zero by the third level.",
++    "Max upline depth": "Max upline depth",
++    "Safety cap against cycles. Commission decays to zero on its own.": "Safety cap against cycles. Commission decays to zero on its own.",
++    "Gross margin by model": "Gross margin by model",
++    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.",
++    "Must be a valid JSON object": "Must be a valid JSON object"
    }
  }
 diff --git a/web/src/i18n/locales/zh-TW.json b/web/src/i18n/locales/zh-TW.json
-index 25250e2..34d18b1 100644
+index 25250e2..921ffd2 100644
 --- a/web/src/i18n/locales/zh-TW.json
 +++ b/web/src/i18n/locales/zh-TW.json
 @@ -2137,7 +2137,7 @@
@@ -969,7 +1335,7 @@ index 25250e2..34d18b1 100644
      "Get started": "開始使用",
      "Get Started": "開始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,20 @@
+@@ -5316,6 +5316,38 @@
      "Zero retention": "零數據保留",
      "Zhipu": "智譜",
      "Zhipu V4": "智譜 V4",
@@ -988,11 +1354,29 @@ index 25250e2..34d18b1 100644
 +    "e.g. WeChat transfer ref, date": "例:微信轉帳單號、日期",
 +    "Required. Used to match this record against the actual transfer.": "必填。用於日後與實際轉帳對帳。",
 +    "Withdrawal recorded": "提現已登記",
-+    "Failed to record withdrawal": "登記提現失敗"
++    "Failed to record withdrawal": "登記提現失敗",
++    "Affiliate Commission": "代理佣金",
++    "Enable Affiliate Commission": "啟用代理佣金",
++    "Pay referrers a share of the profit their referred users generate. Takes effect on new consumption only.": "按下线消费产生的利润给推荐人分成。仅对开启后的新消费生效。",
++    "New user rate": "新用戶期比例",
++    "Share of profit within the new-user window. 0.5 = 50%.": "新用户期内的利润分成比例。0.5 表示 50%。",
++    "New user window (hours)": "新用戶期(小時)",
++    "168 = 7 days.": "168 即 7 天。",
++    "Long-term rate": "長期比例",
++    "Applies after the new-user window until the binding expires.": "新用户期结束后、绑定失效前适用。",
++    "Binding validity (days)": "綁定有效期(天)",
++    "No commission is paid after this many days since binding.": "绑定超过这个天数后不再产生佣金。",
++    "Team rate per level": "團隊獎勵比例",
++    "Each upline earns this share of the level below. 0.05 decays to near zero by the third level.": "每一级取下一级佣金的该比例。0.05 到第三级已衰减到接近于零。",
++    "Max upline depth": "向上追溯層數上限",
++    "Safety cap against cycles. Commission decays to zero on its own.": "防成环的兜底上限。佣金本身会自然衰减到零。",
++    "Gross margin by model": "各模型毛利率",
++    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
++    "Must be a valid JSON object": "必須是合法的 JSON 物件"
    }
  }
 diff --git a/web/src/i18n/locales/zh.json b/web/src/i18n/locales/zh.json
-index 457b1c5..94cd562 100644
+index 457b1c5..1925c7a 100644
 --- a/web/src/i18n/locales/zh.json
 +++ b/web/src/i18n/locales/zh.json
 @@ -2137,7 +2137,7 @@
@@ -1004,7 +1388,7 @@ index 457b1c5..94cd562 100644
      "Get started": "开始使用",
      "Get Started": "开始使用",
      "GitHub": "GitHub",
-@@ -5316,6 +5316,20 @@
+@@ -5316,6 +5316,38 @@
      "Zero retention": "零数据保留",
      "Zhipu": "智谱",
      "Zhipu V4": "智谱 V4",
@@ -1023,6 +1407,24 @@ index 457b1c5..94cd562 100644
 +    "e.g. WeChat transfer ref, date": "例:微信转账单号、日期",
 +    "Required. Used to match this record against the actual transfer.": "必填。用于日后与实际转账对账。",
 +    "Withdrawal recorded": "提现已登记",
-+    "Failed to record withdrawal": "登记提现失败"
++    "Failed to record withdrawal": "登记提现失败",
++    "Affiliate Commission": "代理佣金",
++    "Enable Affiliate Commission": "启用代理佣金",
++    "Pay referrers a share of the profit their referred users generate. Takes effect on new consumption only.": "按下线消费产生的利润给推荐人分成。仅对开启后的新消费生效。",
++    "New user rate": "新用户期比例",
++    "Share of profit within the new-user window. 0.5 = 50%.": "新用户期内的利润分成比例。0.5 表示 50%。",
++    "New user window (hours)": "新用户期(小时)",
++    "168 = 7 days.": "168 即 7 天。",
++    "Long-term rate": "长期比例",
++    "Applies after the new-user window until the binding expires.": "新用户期结束后、绑定失效前适用。",
++    "Binding validity (days)": "绑定有效期(天)",
++    "No commission is paid after this many days since binding.": "绑定超过这个天数后不再产生佣金。",
++    "Team rate per level": "团队奖励比例",
++    "Each upline earns this share of the level below. 0.05 decays to near zero by the third level.": "每一级取下一级佣金的该比例。0.05 到第三级已衰减到接近于零。",
++    "Max upline depth": "向上追溯层数上限",
++    "Safety cap against cycles. Commission decays to zero on its own.": "防成环的兜底上限。佣金本身会自然衰减到零。",
++    "Gross margin by model": "各模型毛利率",
++    "Commission is a share of profit, but the system only knows the sale price. List exceptions only; \"default\" is the fallback. Set a model to 0 to exclude it.": "佣金按利润计算,但系统只知道售价。这里只列例外,default 为兜底值。某模型设为 0 即排除出返佣。",
++    "Must be a valid JSON object": "必须是合法的 JSON 对象"
    }
  }
