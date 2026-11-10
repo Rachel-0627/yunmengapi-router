@@ -115,6 +115,7 @@ services:
       - RETURN_MODE=b64           # 下载转 base64 返回,响应里不出现上游域名;填 url 可一键回退
       - MAX_IMAGE_BYTES=12582912  # 单张图下载上限 12MB,超了判失败(防内存被打爆)
       - DOWNLOAD_TIMEOUT_MS=60000
+      - MAX_BODY_BYTES=8388608    # 请求体上限 8MB,给图生图的 data:base64 参考图留余量
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 30s

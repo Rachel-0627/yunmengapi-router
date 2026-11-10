@@ -157,8 +157,10 @@ curl ${BASE}/v1/images/generations \\
     "n": 1
   }'
 
-# 注意:参考图只能传 URL,不能传 base64(请求体上限 1MB)
-# 也不要用 images 数组,那个写法会被拒绝(400)`,
+# 也可以直接传本地图片,把文件内容转成 data:base64 放进 image 字段:
+#   "image": "data:image/jpeg;base64,/9j/4AAQSkZJRg..."
+# 整个请求体上限 8MB,图片文件控制在 5MB 以内即可
+# 注意:不要用 images 数组,那个写法会被拒绝(400)`,
   },
   {
     label: '透明背景',

@@ -7,7 +7,9 @@ export const CFG = {
   maxWaitMs: +(process.env.MAX_WAIT_MS || 240000),   // 生图约 40 秒,留足余量
   reqMs: +(process.env.SUBMIT_TIMEOUT_MS || 30000),
   maxConcurrency: +(process.env.MAX_CONCURRENCY || 5),
-  maxBodyBytes: +(process.env.MAX_BODY_BYTES || 1048576),
+  /** 请求体上限。图生图的参考图可以用 data:base64 直接内嵌,手机照片常有几 MB,
+   *  所以留到 8MB;并发 5 路时最坏占用约 40MB 内存,这台机器扛得住。 */
+  maxBodyBytes: +(process.env.MAX_BODY_BYTES || 8388608),
 
   /** 返回给客户的图片形态:
    *  b64 = shim 自己把图下载下来转 base64 返回(默认),响应里不出现上游域名
