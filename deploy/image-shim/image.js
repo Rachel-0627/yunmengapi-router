@@ -2,8 +2,11 @@
  * 生图:同步/异步翻译。
  *
  * 上游生图只有异步接口(提交 → 轮询 → 取图),而 new-api 的图片中继只支持
- * OpenAI 标准同步调用(必须 200 + data[].url,见 relay/image_handler.go:100-105)。
+ * OpenAI 标准同步调用(必须 HTTP 200,见 relay/image_handler.go:100-105)。
  * 本模块替 new-api 跑完异步三步,对它装成一个普通的同步生图 API。
+ *
+ * 返回形态由 RETURN_MODE 决定:默认 b64(自己下载转 base64,不暴露上游域名),
+ * 设成 url 则退回旧行为、直接透传上游图片地址。
  */
 
 import { CFG, fail, fetchT, log } from './config.js'
@@ -27,6 +30,42 @@ function normalize(j) {
   return { state, url, reason }
 }
 
+/**
+ * 把上游图片下载下来转成 base64。
+ *
+ * 为什么不直接把上游地址给客户:① 地址里带着上游域名,等于把货源告诉客户;
+ * ② 上游结果只保留约 2 小时,客户来不及转存就 404。
+ *
+ * 边下边数字节,超过上限立刻掐断 —— 不能等整个 body 读完才发现太大,
+ * 那时内存已经吃进去了(并发 5 路,一路失控就可能打爆容器)。
+ */
+async function downloadAsBase64(url, auth) {
+  try {
+    // 实测上游图片地址免鉴权可下载,但仍带上 Authorization:
+    // 万一上游哪天收紧权限(它文档里已有这类说法),这条链路不会跟着断。
+    const r = await fetchT(url, { headers: { Authorization: auth } }, CFG.downloadMs)
+    if (!r.ok) return { error: `HTTP ${r.status}` }
+
+    const ct = r.headers.get('content-type') || ''
+    if (!ct.startsWith('image/')) return { error: `返回的不是图片 (${ct.slice(0, 40)})` }
+
+    const declared = +(r.headers.get('content-length') || 0)
+    if (declared > CFG.maxImageBytes) return { error: `图片过大 ${declared}B` }
+
+    const chunks = []
+    let size = 0
+    for await (const chunk of r.body) {
+      size += chunk.length
+      if (size > CFG.maxImageBytes) return { error: `图片超过 ${CFG.maxImageBytes}B 上限` }
+      chunks.push(chunk)
+    }
+    if (size === 0) return { error: '图片为空' }
+    return { data: Buffer.concat(chunks).toString('base64') }
+  } catch (e) {
+    return { error: e.name === 'AbortError' ? '下载超时' : (e.message || e.name) }
+  }
+}
+
 export async function generate(req, res, auth, body) {
   // ── 入参校验:非法输入直接拒绝,不浪费上游额度 ──
   let p
@@ -35,6 +74,11 @@ export async function generate(req, res, auth, body) {
   if (!p?.prompt) return fail(res, 400, '缺少 prompt 参数', 'missing_prompt')
   // n>1 会让 new-api 按张数计费,但上游异步只回一张 —— 收了多张的钱给一张图,先禁掉
   if (p.n != null && +p.n !== 1) return fail(res, 400, '当前仅支持 n=1', 'unsupported_n')
+  // 上游只认单数 image 字段。实测传 images 时它既不报错也不读参考图,
+  // 客户会拿到一张完全无关的图还照常扣费 —— 这里提前拦掉,不发给上游。
+  if (p.images != null) {
+    return fail(res, 400, '参考图请用 image 字段传图片 URL(字符串),本站不支持 images 数组', 'unsupported_images')
+  }
 
   const t0 = Date.now()
   const H = { 'Content-Type': 'application/json', Authorization: auth }
@@ -88,9 +132,23 @@ export async function generate(req, res, auth, body) {
     }
     if (n.state === 'done') {
       if (!n.url) return fail(res, 502, '任务完成但未返回图片地址', 'no_image_url')
+
       // ── ③ 组装成 OpenAI 标准同步响应 ──
-      log(`[ok] model=${p.model} task=${taskId} ${Math.round((Date.now() - t0) / 1000)}s`)
-      const out = JSON.stringify({ created: Math.floor(Date.now() / 1000), data: [{ url: n.url }] })
+      // 默认把图下载下来转 base64:上游图片地址带着上游域名,直接透传等于把货源
+      // 告诉客户;而且上游结果只留约 2 小时,客户来不及转存就失效。
+      let item
+      if (CFG.returnMode === 'url') {
+        item = { url: n.url }
+      } else {
+        const b64 = await downloadAsBase64(n.url, auth)
+        if (b64.error) {
+          log(`[download] ${taskId} 失败: ${b64.error}`)
+          return fail(res, 502, '图片下载失败,请重试', 'image_download_failed')
+        }
+        item = { b64_json: b64.data }
+      }
+      log(`[ok] model=${p.model} task=${taskId} ${Math.round((Date.now() - t0) / 1000)}s ${CFG.returnMode}`)
+      const out = JSON.stringify({ created: Math.floor(Date.now() / 1000), data: [item] })
       return res.writeHead(200, { 'Content-Type': 'application/json' }).end(out)
     }
   }
