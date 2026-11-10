@@ -61,6 +61,14 @@ export default function Page() {
             用 4K 模型却传 1024×1024,仍按 4K 单价扣费;1K 模型不支持 4K 尺寸,传了会被直接拒绝(不扣费)。
           </p>
           <CodeTabs snippets={imageSnippets} />
+          <p className="mt-4 rounded-lg border border-[var(--line)] bg-[var(--card)] p-3.5 text-[13px] leading-relaxed text-[var(--muted)]">
+            <span className="font-semibold text-[var(--fg)]">三件事要注意:</span>{' '}
+            ① 接口是<span className="text-[var(--fg)]">同步</span>的,出图约 40–90 秒,
+            客户端超时请设到 300 秒;② 返回的是{' '}
+            <code className="font-mono text-[var(--c1)]">data[0].b64_json</code>(Base64 图片内容),
+            不是图片地址,解码后自行保存;③ 目前每次只能生成一张,{' '}
+            <code className="font-mono text-[var(--c1)]">n</code> 只接受 1。
+          </p>
         </Block>
 
         <Block n="05" t="生成视频">

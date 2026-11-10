@@ -96,14 +96,19 @@ export const protocolSnippets: Snippet[] = [
   },
 ]
 
-/** 生图:1K 与 4K 是两个独立模型名,计费按模型名结算,不看 size */
+/**
+ * 生图:1K 与 4K 是两个独立模型名,计费按模型名结算,不看 size。
+ * 返回的是 base64(data[0].b64_json),不是图片地址 —— 上游结果只留约 2 小时,
+ * 直接给地址客户来不及转存就失效了。
+ */
 export const imageSnippets: Snippet[] = [
   {
-    label: 'cURL',
+    label: '文生图 · cURL',
     lang: 'bash',
     code: `curl ${BASE}/v1/images/generations \\
   -H "Authorization: Bearer $API_KEY" \\
   -H "Content-Type: application/json" \\
+  --max-time 300 \\
   -d '{
     "model": "gpt-image2-1k",
     "prompt": "一只在雪地里打滚的柴犬,电影感光线",
@@ -111,22 +116,66 @@ export const imageSnippets: Snippet[] = [
     "n": 1
   }'
 
+# 返回 {"created":..,"data":[{"b64_json":"iVBORw0KG..."}]}
 # 4K 换成 "model": "gpt-image2-4k" 并传 "size": "3840x2160"`,
   },
   {
-    label: 'Python',
+    label: '文生图 · Python',
     lang: 'python',
-    code: `from openai import OpenAI
+    code: `import base64
+from openai import OpenAI
 
-client = OpenAI(api_key="你的 API Key", base_url="${BASE}/v1")
+client = OpenAI(
+    api_key="你的 API Key",
+    base_url="${BASE}/v1",
+    timeout=300,               # 出图约 40-90 秒,超时一定要调大
+)
 
 resp = client.images.generate(
     model="gpt-image2-1k",     # 4K 用 gpt-image2-4k
     prompt="一只在雪地里打滚的柴犬,电影感光线",
     size="1024x1024",          # 4K 用 3840x2160
-    n=1,
+    n=1,                       # 目前只支持 1
 )
-print(resp.data[0].url)`,
+
+with open("out.png", "wb") as f:
+    f.write(base64.b64decode(resp.data[0].b64_json))`,
+  },
+  {
+    label: '图生图',
+    lang: 'bash',
+    code: `# 参考图用 image 字段传一个公网可访问的图片地址(字符串)
+curl ${BASE}/v1/images/generations \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  --max-time 300 \\
+  -d '{
+    "model": "gpt-image2-1k",
+    "prompt": "保持参考图中的主体完全不变,把它放在深色木桌上,暖色灯光",
+    "image": "https://你的图床/ref.png",
+    "size": "1024x1024",
+    "n": 1
+  }'
+
+# 注意:参考图只能传 URL,不能传 base64(请求体上限 1MB)
+# 也不要用 images 数组,那个写法会被拒绝(400)`,
+  },
+  {
+    label: '透明背景',
+    lang: 'bash',
+    code: `# 加 background: "transparent",返回带 alpha 通道的 PNG,适合做贴纸、图标
+curl ${BASE}/v1/images/generations \\
+  -H "Authorization: Bearer $API_KEY" \\
+  -H "Content-Type: application/json" \\
+  --max-time 300 \\
+  -d '{
+    "model": "gpt-image2-1k",
+    "prompt": "一只柴犬贴纸,纯透明背景,无阴影",
+    "size": "1024x1024",
+    "n": 1,
+    "background": "transparent",
+    "output_format": "png"
+  }'`,
   },
 ]
 
